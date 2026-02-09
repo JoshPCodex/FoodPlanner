@@ -7,69 +7,214 @@ const CATEGORY_HINTS: Array<{ match: RegExp; category: IngredientCategory }> = [
   { match: /(bread|pasta|penne|spaghetti|rice|oil|flour|salt|sugar|beans|broth|sauce)/i, category: 'Pantry' }
 ];
 
+const NOISE_LINE_PATTERNS = [
+  /subtotal/i,
+  /total/i,
+  /tax/i,
+  /tip/i,
+  /service fee/i,
+  /delivery/i,
+  /fees?/i,
+  /loyalty/i,
+  /savings/i,
+  /discount/i,
+  /coupon/i,
+  /promo/i,
+  /payment/i,
+  /visa/i,
+  /mastercard/i,
+  /debit/i,
+  /credit/i,
+  /order summary/i,
+  /estimated total/i,
+  /item total/i,
+  /balance/i,
+  /replacement/i,
+  /refund/i,
+  /www\./i,
+  /instacart/i,
+  /wegmans/i,
+  /^\s*(produce|dairy|pantry|frozen|bakery|meat|seafood|beverages|household|snacks)\s*$/i
+];
+
+const WEIGHT_PATTERN = /\b\d+(?:\.\d+)?\s*(?:oz|fl\s*oz|lb|lbs|g|kg|ml|l)\b/gi;
+
+type ParsedLine =
+  | {
+      type: 'item';
+      name: string;
+      count: number;
+    }
+  | {
+      type: 'qty_hint';
+      factor: number;
+    }
+  | null;
+
 function inferCategory(name: string): IngredientCategory {
   return CATEGORY_HINTS.find((rule) => rule.match.test(name))?.category ?? 'Other';
 }
 
-function normalizeName(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/\b(organic|fresh|frozen|large|small|medium|thinly\s+sliced|sliced|pack|package|pk|lb|oz|gallon|dozen)\b/g, ' ')
-    .replace(/[^a-z0-9\s]/g, ' ')
+function canonicalizeName(name: string): string {
+  return name
+    .replace(/\beggs\b/g, 'egg')
+    .replace(/\bbananas\b/g, 'banana')
+    .replace(/\bcarrots\b/g, 'carrot')
+    .replace(/\bbreasts\b/g, 'breast')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-function parseLine(rawLine: string): { name: string; count: number } | null {
-  const cleanedLine = rawLine
-    .trim()
-    .replace(/^[-*•\d.)\s]+/, '')
-    .replace(/\s+/g, ' ');
+function normalizeName(value: string): string {
+  return canonicalizeName(
+    value
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(WEIGHT_PATTERN, ' ')
+      .replace(/\$\s*\d+[\d.,]*/g, ' ')
+      .replace(/\b\d+\b/g, ' ')
+      .replace(
+        /\b(organic|fresh|frozen|large|small|medium|thinly\s+sliced|sliced|pack|package|pk|brand|club|family\s*pack|value\s*pack)\b/g,
+        ' '
+      )
+      .replace(/\b(sargento|wegmans|instacart|kraft|tyson|perdue|great\s*value|signature\s*select)\b/g, ' ')
+      .replace(/[^a-z\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
 
-  if (!cleanedLine) return null;
+function looksLikeNoiseLine(line: string): boolean {
+  return NOISE_LINE_PATTERNS.some((pattern) => pattern.test(line));
+}
 
-  const countMatch = cleanedLine.match(/^(.*?)(?:\s*[xX]\s*(\d+)|\s*\(\s*[xX]\s*(\d+)\s*\)|\s+qty\s*(\d+)|\s+count\s*(\d+))\s*$/i);
-  const count = countMatch ? Number(countMatch[2] ?? countMatch[3] ?? countMatch[4] ?? countMatch[5] ?? 1) : 1;
-  const rawName = countMatch ? countMatch[1] : cleanedLine;
-  const name = normalizeName(rawName);
+function isLikelyNonItemName(name: string): boolean {
+  if (!name) return true;
+  if (looksLikeNoiseLine(name)) return true;
+  if (!/[a-z]/.test(name)) return true;
+  return false;
+}
 
-  if (!name) return null;
+function parseLine(rawLine: string): ParsedLine {
+  const original = rawLine.trim();
+  if (!original) return null;
+  if (looksLikeNoiseLine(original)) return null;
 
-  return {
-    name,
-    count: Number.isFinite(count) && count > 0 ? Math.floor(count) : 1
-  };
+  let working = original;
+  let factor = 1;
+
+  const prefixQty = working.match(/^\s*(\d+)\s*[xX]\s*(?=[a-zA-Z(])/);
+  if (prefixQty) {
+    factor *= Number(prefixQty[1]);
+    working = working.replace(prefixQty[0], ' ');
+  }
+
+  const receiptQtyPrice = working.match(/\b(\d+)\s*[xX]\s*\$\s*\d+[\d.,]*/i);
+  if (receiptQtyPrice) {
+    factor *= Number(receiptQtyPrice[1]);
+    working = working.replace(receiptQtyPrice[0], ' ');
+  }
+
+  const qtyKeyword = working.match(/\b(?:qty|quantity)\s*[:x]?\s*(\d+)\b/i);
+  if (qtyKeyword) {
+    factor *= Number(qtyKeyword[1]);
+    working = working.replace(qtyKeyword[0], ' ');
+  }
+
+  const explicitXCount = working.match(/\b[xX]\s*(\d+)\b/);
+  if (explicitXCount) {
+    factor *= Number(explicitXCount[1]);
+    working = working.replace(explicitXCount[0], ' ');
+  }
+
+  const ctMatches = [...working.matchAll(/\b(\d+)\s*ct\b/gi)];
+  if (ctMatches.length > 0) {
+    ctMatches.forEach((match) => {
+      factor *= Number(match[1]);
+    });
+    working = working.replace(/\b\d+\s*ct\b/gi, ' ');
+  }
+
+  if (/\bdozen\b/i.test(working)) {
+    factor *= 12;
+    working = working.replace(/\bdozen\b/gi, ' ');
+  }
+
+  const normalized = normalizeName(working);
+  const safeFactor = Number.isFinite(factor) && factor > 0 ? Math.floor(factor) : 1;
+
+  if (normalized && !isLikelyNonItemName(normalized)) {
+    return {
+      type: 'item',
+      name: normalized,
+      count: Math.max(1, safeFactor)
+    };
+  }
+
+  const hasMeaningfulLetters = /[a-z]{2,}/i.test(original.replace(/\bx\b/gi, ' '));
+  if (!hasMeaningfulLetters && safeFactor > 1) {
+    return {
+      type: 'qty_hint',
+      factor: safeFactor
+    };
+  }
+
+  return null;
 }
 
 export function parseInventoryImportText(text: string): ReceiptDraftItem[] {
   const merged = new Map<string, ReceiptDraftItem>();
+  let pending: { key: string; lastAddedCount: number } | null = null;
 
   text
     .split(/\r?\n/)
     .map((line) => parseLine(line))
-    .filter((line): line is { name: string; count: number } => Boolean(line))
-    .forEach((line) => {
-      const key = line.name;
-      const existing = merged.get(key);
+    .forEach((parsed) => {
+      if (!parsed) return;
 
+      if (parsed.type === 'qty_hint') {
+        if (!pending || parsed.factor <= 1) return;
+        const existing = merged.get(pending.key);
+        if (!existing) return;
+
+        const delta = pending.lastAddedCount * (parsed.factor - 1);
+        merged.set(pending.key, {
+          ...existing,
+          count: existing.count + delta
+        });
+        pending = {
+          ...pending,
+          lastAddedCount: pending.lastAddedCount * parsed.factor
+        };
+        return;
+      }
+
+      const key = parsed.name;
+      const existing = merged.get(key);
       if (existing) {
-        merged.set(key, { ...existing, count: existing.count + line.count });
+        merged.set(key, {
+          ...existing,
+          count: existing.count + parsed.count
+        });
       } else {
         merged.set(key, {
           id: `ai-import-${Math.random().toString(36).slice(2, 9)}`,
           name: key,
-          count: line.count,
+          count: parsed.count,
           category: inferCategory(key)
         });
       }
+
+      pending = {
+        key,
+        lastAddedCount: parsed.count
+      };
     });
 
   return Array.from(merged.values());
 }
 
-export const AI_INVENTORY_PROMPT = `You are helping me build a simple home food inventory from photos (receipt, fridge, pantry, groceries).
-
-Return ONLY plain text, one item per line, using this exact format:
+export const AI_INVENTORY_PROMPT = `Return ONLY plain text, one item per line, using this exact format:
 ingredient name xN
 
 Rules:
@@ -77,12 +222,11 @@ Rules:
 2) Convert branded receipt lines to common ingredient names.
 3) Merge duplicates and sum counts.
 4) If quantity is unclear, use x1.
-5) Keep names short and consistent (example: "cheddar cheese", "chicken breast", "banana", "egg", "milk").
-6) Do not include prices, totals, SKU codes, or extra commentary.
-
-Examples:
-Sargento Thinly Sliced Cheddar Cheese 12oz -> cheddar cheese x1
-Eggs 12 ct -> egg x12
-Bananas (5) -> banana x5
-Thin sliced chicken breast pack of 4 -> chicken breast x4
-Gallon Milk -> milk x1`;
+5) Keep names short and consistent (examples: "cheddar cheese", "chicken breast", "banana", "egg", "milk").
+6) Do not include prices, totals, SKU codes, loyalty savings, section headers, or extra commentary.
+7) Quantity parsing rules:
+   - The input may be raw pasted text, not just photos/OCR.
+   - Lines with "2 x $X" mean quantity 2.
+   - If an item shows a "ct" count (for example, "6 ct"), use that count.
+   - If both appear (for example, "2 x (6 ct eggs)"), multiply them.
+   - If weight is present without explicit count, use x1.`;

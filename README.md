@@ -68,6 +68,7 @@ Use this when you want ChatGPT to interpret photos and produce import-ready inve
 5. Click `Parse List`, review/edit categories and counts, then `Import to Inventory`.
 
 The parser also accepts lines without quantity (`milk`) and treats them as `x1`.
+It also supports raw pasted receipt text and applies quantity rules like `2 x $...`, `6 ct`, and multiplicative `2 x (6 ct eggs)` -> `egg x12`.
 
 ## Export Plan as Image (PNG/JPG)
 

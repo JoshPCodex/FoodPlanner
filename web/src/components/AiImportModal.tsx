@@ -46,12 +46,12 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
           />
 
           <p className="text-xs text-slate-600">
-            Add your receipt/fridge/grocery photos in ChatGPT with this prompt. Then paste the returned lines on the right.
+            Use this prompt with photos OR raw pasted receipt text in ChatGPT, then paste the returned lines on the right.
           </p>
         </div>
 
         <div className="space-y-3 rounded-lg border border-slate-200 p-3">
-          <h3 className="text-sm font-semibold text-slate-700">2) Paste AI output and import</h3>
+          <h3 className="text-sm font-semibold text-slate-700">2) Paste AI output or pasted receipt text and import</h3>
 
           <textarea
             value={inputText}
