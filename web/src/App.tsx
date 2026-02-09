@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { DAY_NAMES, MEAL_LABELS, MEAL_TYPES, CATEGORIES } from './constants';
-import { CalendarCell } from './components/CalendarCell';
+import { CalendarCell, SlotAddress } from './components/CalendarCell';
 import { ContextMenu } from './components/ContextMenu';
 import { FavoriteMealCard } from './components/FavoriteMealCard';
 import { AiImportModal } from './components/AiImportModal';
@@ -11,14 +11,8 @@ import { MealModal } from './components/MealModal';
 import { Modal } from './components/Modal';
 import { ReceiptScannerModal } from './components/ReceiptScannerModal';
 import { usePlannerStore } from './store/usePlannerStore';
-import type { Ingredient, IngredientCategory, Meal, MealType, PersonCellEntry, PlannerExportShape, Profile, WeekPlan } from './types';
+import type { Ingredient, IngredientCategory, Meal, MealType, PlannerExportShape, Profile, SlotEntry, WeekPlan } from './types';
 import { addDays, formatDisplayDate, formatWeekLabel, parseISODate } from './utils/date';
-
-interface SlotAddress {
-  mealType: MealType;
-  day: number;
-  profileId: string;
-}
 
 interface SlotMenuState {
   type: 'slot';
@@ -36,6 +30,31 @@ interface IngredientMenuState {
 
 type MenuState = SlotMenuState | IngredientMenuState | null;
 
+interface NutritionTotals {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}
+
+function emptyTotals(): NutritionTotals {
+  return {
+    calories: 0,
+    protein_g: 0,
+    carbs_g: 0,
+    fat_g: 0
+  };
+}
+
+function addTotals(a: NutritionTotals, b: NutritionTotals): NutritionTotals {
+  return {
+    calories: a.calories + b.calories,
+    protein_g: a.protein_g + b.protein_g,
+    carbs_g: a.carbs_g + b.carbs_g,
+    fat_g: a.fat_g + b.fat_g
+  };
+}
+
 function emptyPlan(weekStartDate: string): WeekPlan {
   return {
     weekStartDate,
@@ -49,13 +68,26 @@ function emptyPlan(weekStartDate: string): WeekPlan {
 }
 
 function parseSlotId(id: string): SlotAddress | null {
-  const match = id.match(/^slot-(breakfast|lunch|dinner|snack)-([0-6])-(.+)$/);
-  if (!match) return null;
-  return {
-    mealType: match[1] as MealType,
-    day: Number(match[2]),
-    profileId: match[3]
-  };
+  const familyMatch = id.match(/^slot-(breakfast|lunch|dinner|snack)-([0-6])-family$/);
+  if (familyMatch) {
+    return {
+      mealType: familyMatch[1] as MealType,
+      day: Number(familyMatch[2]),
+      targetType: 'family'
+    };
+  }
+
+  const profileMatch = id.match(/^slot-(breakfast|lunch|dinner|snack)-([0-6])-profile-(.+)$/);
+  if (profileMatch) {
+    return {
+      mealType: profileMatch[1] as MealType,
+      day: Number(profileMatch[2]),
+      targetType: 'profile',
+      profileId: profileMatch[3]
+    };
+  }
+
+  return null;
 }
 
 function appError(message: string): void {
@@ -76,6 +108,24 @@ function splitForExport(value: string, maxLen = 36): string[] {
   });
   if (current) lines.push(current);
   return lines;
+}
+
+function percent(current: number, total?: number): number {
+  if (!total || total <= 0) return 0;
+  const value = (current / total) * 100;
+  return Math.max(0, Math.min(100, value));
+}
+
+function macroBar(value: number, goal?: number): string {
+  return `${percent(value, goal)}%`;
+}
+
+function optionalNumber(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(0, parsed);
 }
 
 export default function App() {
@@ -137,14 +187,21 @@ export default function App() {
   const [duplicateSource, setDuplicateSource] = useState<SlotAddress | null>(null);
   const [duplicateTargetDay, setDuplicateTargetDay] = useState(0);
   const [duplicateTargetMeal, setDuplicateTargetMeal] = useState<MealType>('dinner');
+  const [duplicateTargetType, setDuplicateTargetType] = useState<'family' | 'profile'>('family');
   const [duplicateTargetProfile, setDuplicateTargetProfile] = useState('');
 
   const [activeDragLabel, setActiveDragLabel] = useState<string>('');
+  const [activeDragType, setActiveDragType] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const mealById = useMemo(() => new Map(meals.map((meal) => [meal.id, meal])), [meals]);
-  const profileById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
+
+  const ingredientById = useMemo(() => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient])), [ingredients]);
+  const ingredientByNormalizedName = useMemo(
+    () => new Map(ingredients.map((ingredient) => [ingredient.name.toLowerCase().trim(), ingredient])),
+    [ingredients]
+  );
 
   const pinnedMeals = useMemo(
     () => pinnedMealIds.map((id) => mealById.get(id)).filter((meal): meal is Meal => Boolean(meal)),
@@ -173,12 +230,56 @@ export default function App() {
 
   const weekStart = parseISODate(currentWeekStartDate);
 
-  function resolveMealName(entry: PersonCellEntry): string | undefined {
+  function resolveMealName(entry: SlotEntry): string | undefined {
     if (entry.mealId) {
       return mealById.get(entry.mealId)?.name ?? entry.adHocMealName;
     }
     return entry.adHocMealName;
   }
+
+  function nutritionForIngredientRef(ref: { ingredientId?: string; name: string; qty: number }): NutritionTotals {
+    const matched = ref.ingredientId ? ingredientById.get(ref.ingredientId) : ingredientByNormalizedName.get(ref.name.toLowerCase().trim());
+    if (!matched) return emptyTotals();
+    return {
+      calories: (matched.calories ?? 0) * ref.qty,
+      protein_g: (matched.protein_g ?? 0) * ref.qty,
+      carbs_g: (matched.carbs_g ?? 0) * ref.qty,
+      fat_g: (matched.fat_g ?? 0) * ref.qty
+    };
+  }
+
+  function nutritionForSlot(slot: SlotEntry | null): NutritionTotals {
+    if (!slot) return emptyTotals();
+    return slot.ingredientRefs.reduce((sum, item) => addTotals(sum, nutritionForIngredientRef(item)), emptyTotals());
+  }
+
+  const dayTotalsByProfile = useMemo(() => {
+    const totals: Record<number, Record<string, NutritionTotals>> = {};
+
+    for (let day = 0; day < 7; day += 1) {
+      totals[day] = {};
+      profiles.forEach((profile) => {
+        totals[day][profile.id] = emptyTotals();
+      });
+
+      MEAL_TYPES.forEach((mealType) => {
+        const cell = weekPlan.grid[mealType][day];
+        if (!cell) return;
+
+        const familyTotals = nutritionForSlot(cell.family);
+        profiles.forEach((profile) => {
+          totals[day][profile.id] = addTotals(totals[day][profile.id], familyTotals);
+        });
+
+        profiles.forEach((profile) => {
+          const personalTotals = nutritionForSlot(cell.profiles?.[profile.id] ?? null);
+          totals[day][profile.id] = addTotals(totals[day][profile.id], personalTotals);
+        });
+      });
+    }
+
+    return totals;
+  }, [profiles, weekPlan, ingredientById, ingredientByNormalizedName]);
 
   function closeContextMenu() {
     setContextMenu(null);
@@ -199,39 +300,45 @@ export default function App() {
         weekPlan.grid[mealType].map((cell) => {
           if (!cell) return null;
 
-          const mealsForCell = Object.entries(cell)
-            .map(([profileId, personEntry]) => {
-              if (!personEntry) return null;
-              const profileName = profileById.get(profileId)?.name ?? 'Person';
-              const mealName = resolveMealName(personEntry) ?? 'Meal';
-              return `${profileName}: ${mealName}`;
-            })
-            .filter((value): value is string => Boolean(value));
+          const labels: string[] = [];
+          if (cell.family) {
+            labels.push(`Family: ${resolveMealName(cell.family) ?? 'Meal'}`);
+          }
+          profiles.forEach((profile) => {
+            const slot = cell.profiles?.[profile.id];
+            if (slot) {
+              labels.push(`${profile.name}: ${resolveMealName(slot) ?? 'Meal'}`);
+            }
+          });
 
-          if (mealsForCell.length === 0) return null;
+          if (labels.length === 0) return null;
 
-          const joinedName = splitForExport(mealsForCell.join(' | '), 34).join(' / ');
-          const ingredientsForCell = Object.entries(cell)
-            .flatMap(([profileId, personEntry]) => {
-              if (!personEntry) return [];
-              const profileName = profileById.get(profileId)?.name ?? 'Person';
-              return personEntry.ingredientRefs.map((item) => ({
-                name: `${profileName}: ${item.name}`,
-                qty: item.qty
-              }));
+          const displayName = splitForExport(labels.join(' | '), 34).join(' / ');
+          const ingredientsForCell: Array<{ name: string; qty: number }> = [];
+
+          if (cell.family) {
+            cell.family.ingredientRefs.forEach((item) => {
+              ingredientsForCell.push({ name: `Family: ${item.name}`, qty: item.qty });
             });
+          }
 
-          const servingTotal = Object.values(cell)
-            .filter((entry): entry is PersonCellEntry => Boolean(entry))
-            .reduce((sum, entry) => sum + (entry.servings || 1), 0);
+          profiles.forEach((profile) => {
+            const slot = cell.profiles?.[profile.id];
+            if (!slot) return;
+            slot.ingredientRefs.forEach((item) => {
+              ingredientsForCell.push({ name: `${profile.name}: ${item.name}`, qty: item.qty });
+            });
+          });
+
+          const servings = labels.length;
 
           return {
-            mealName: joinedName,
-            adHocMealName: joinedName,
+            mealName: displayName,
+            adHocMealName: displayName,
             ingredients: ingredientsForCell,
             assignedTo: 'split',
-            servings: servingTotal,
-            isLeftovers: Object.values(cell).some((entry) => Boolean(entry?.isLeftovers))
+            servings,
+            isLeftovers: false
           };
         })
       ])
@@ -247,13 +354,6 @@ export default function App() {
           weekStartDate: currentWeekStartDate,
           weekPlan: {
             grid: exportGrid
-          },
-          theme: {
-            accent: 'teal'
-          },
-          layout: {
-            width: 1520,
-            height: 980
           }
         })
       });
@@ -305,11 +405,14 @@ export default function App() {
 
   function handleDragStart(event: DragStartEvent) {
     const label = (event.active.data.current?.label as string | undefined) ?? 'Dragging';
+    const dragType = (event.active.data.current?.dragType as string | undefined) ?? null;
     setActiveDragLabel(label);
+    setActiveDragType(dragType);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragLabel('');
+    setActiveDragType(null);
     if (!event.over) return;
 
     const overAddress = parseSlotId(String(event.over.id));
@@ -368,13 +471,14 @@ export default function App() {
           setDuplicateSource(address);
           setDuplicateTargetDay(address.day);
           setDuplicateTargetMeal(address.mealType);
-          setDuplicateTargetProfile(address.profileId);
+          setDuplicateTargetType(address.targetType);
+          setDuplicateTargetProfile(address.profileId ?? profiles[0]?.id ?? '');
           setDuplicateModalOpen(true);
         }
       },
       {
         id: 'save-meal',
-        label: 'Save slot as Meal',
+        label: 'Save section as Meal',
         onClick: () => {
           const name = window.prompt('Meal name');
           if (!name) return;
@@ -383,18 +487,26 @@ export default function App() {
       },
       {
         id: 'clear',
-        label: 'Clear person slot',
+        label: 'Clear section',
         onClick: () => clearCell(address),
         tone: 'danger' as const
       }
     ];
-  }, [clearCell, contextMenu, makeLeftovers, saveCellAsMeal, setCellServings]);
+  }, [clearCell, contextMenu, makeLeftovers, profiles, saveCellAsMeal, setCellServings]);
 
   const ingredientMenuActions = useMemo(() => {
     if (!contextMenu || contextMenu.type !== 'ingredient') return [];
     const ingredient = contextMenu.ingredient;
 
     return [
+      {
+        id: 'edit',
+        label: 'Edit ingredient',
+        onClick: () => {
+          setEditingIngredient(ingredient);
+          setIngredientModalOpen(true);
+        }
+      },
       {
         id: 'set-expiry',
         label: 'Set expiration date',
@@ -446,7 +558,7 @@ export default function App() {
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="min-h-screen bg-gradient-to-b from-slate-100 via-cyan-50 to-white px-4 py-4 text-slate-800">
-        <div className="mx-auto flex w-full max-w-[1750px] flex-col gap-4">
+        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4">
           <header className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -574,7 +686,7 @@ export default function App() {
           <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Pinned Favorites</h2>
-              <div className="text-xs text-slate-500">Drag a meal card into a specific person lane in any calendar cell</div>
+              <div className="text-xs text-slate-500">Drag into a cell and use the hover assignment overlay to pick Family or person</div>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {pinnedMeals.map((meal) => (
@@ -636,6 +748,45 @@ export default function App() {
                   <div key={name} className="rounded-lg bg-cyan-50 p-2 text-center">
                     <div className="text-sm font-semibold text-cyan-800">{name}</div>
                     <div className="text-xs text-cyan-700">{formatDisplayDate(addDays(weekStart, day).toISOString().slice(0, 10))}</div>
+                    <div className="mt-1 space-y-1">
+                      {profiles.map((profile) => {
+                        const totals = dayTotalsByProfile[day]?.[profile.id] ?? emptyTotals();
+                        const calPct = percent(totals.calories, profile.goalEnabled ? profile.dailyCalorieGoal : undefined);
+                        const showMacros =
+                          profile.goalEnabled &&
+                          (profile.dailyProteinGoalG !== undefined || profile.dailyCarbsGoalG !== undefined || profile.dailyFatGoalG !== undefined);
+
+                        return (
+                          <div key={`day-${day}-profile-${profile.id}`} className="rounded border border-slate-200 bg-white/80 px-1 py-1 text-left">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="truncate text-[10px] font-semibold" style={{ color: profile.color }}>
+                                {profile.name}
+                              </span>
+                              <span className="text-[10px] text-slate-600">
+                                {Math.round(totals.calories)}
+                                {profile.goalEnabled && profile.dailyCalorieGoal ? `/${profile.dailyCalorieGoal}` : ''}
+                              </span>
+                            </div>
+                            <div className="mt-1 h-1.5 overflow-hidden rounded bg-slate-200">
+                              <div className="h-full rounded" style={{ width: `${calPct}%`, backgroundColor: profile.color }} />
+                            </div>
+                            {showMacros && (
+                              <div className="mt-1 space-y-0.5">
+                                <div className="h-1 overflow-hidden rounded bg-slate-200">
+                                  <div className="h-full rounded bg-emerald-500" style={{ width: macroBar(totals.protein_g, profile.dailyProteinGoalG) }} />
+                                </div>
+                                <div className="h-1 overflow-hidden rounded bg-slate-200">
+                                  <div className="h-full rounded bg-amber-500" style={{ width: macroBar(totals.carbs_g, profile.dailyCarbsGoalG) }} />
+                                </div>
+                                <div className="h-1 overflow-hidden rounded bg-slate-200">
+                                  <div className="h-full rounded bg-rose-500" style={{ width: macroBar(totals.fat_g, profile.dailyFatGoalG) }} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
 
@@ -651,6 +802,7 @@ export default function App() {
                         day={day}
                         profiles={profiles}
                         entry={weekPlan.grid[mealType][day]}
+                        activeDragType={activeDragType}
                         resolveMealName={resolveMealName}
                         onSlotContextMenu={openSlotContextMenu}
                       />
@@ -666,7 +818,7 @@ export default function App() {
           open={Boolean(contextMenu && contextMenu.type === 'slot')}
           x={contextMenu?.x ?? 0}
           y={contextMenu?.y ?? 0}
-          title="Person slot actions"
+          title="Section actions"
           actions={slotMenuActions}
           onClose={closeContextMenu}
         />
@@ -713,36 +865,112 @@ export default function App() {
         <ReceiptScannerModal open={receiptModalOpen} onClose={() => setReceiptModalOpen(false)} onImportItems={mergeReceiptItems} />
         <AiImportModal open={aiImportModalOpen} onClose={() => setAiImportModalOpen(false)} onImportItems={mergeReceiptItems} />
 
-        <Modal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} title="Profiles" widthClassName="max-w-3xl">
+        <Modal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} title="Profiles" widthClassName="max-w-4xl">
           <div className="space-y-3">
             {profiles.map((profile) => (
-              <div key={profile.id} className="grid grid-cols-12 items-center gap-2 rounded-md border border-slate-200 p-2">
-                <input
-                  value={profile.name}
-                  onChange={(event) => updateProfile(profile.id, { name: event.target.value })}
-                  className="col-span-7 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
-                />
-                <input
-                  type="color"
-                  value={profile.color}
-                  onChange={(event) => updateProfile(profile.id, { color: event.target.value })}
-                  className="col-span-2 h-9 w-full rounded-md border border-slate-300"
-                />
-                <div className="col-span-2 text-xs" style={{ color: profile.color }}>
-                  {profile.color}
+              <div key={profile.id} className="space-y-2 rounded-md border border-slate-200 p-3">
+                <div className="grid grid-cols-12 items-center gap-2">
+                  <input
+                    value={profile.name}
+                    onChange={(event) => updateProfile(profile.id, { name: event.target.value })}
+                    className="col-span-6 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                  <input
+                    type="color"
+                    value={profile.color}
+                    onChange={(event) => updateProfile(profile.id, { color: event.target.value })}
+                    className="col-span-2 h-9 w-full rounded-md border border-slate-300"
+                  />
+                  <label className="col-span-3 flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(profile.goalEnabled)}
+                      onChange={(event) =>
+                        updateProfile(profile.id, {
+                          goalEnabled: event.target.checked,
+                          dailyCalorieGoal: event.target.checked ? profile.dailyCalorieGoal ?? 2000 : undefined,
+                          dailyProteinGoalG: event.target.checked ? profile.dailyProteinGoalG : undefined,
+                          dailyCarbsGoalG: event.target.checked ? profile.dailyCarbsGoalG : undefined,
+                          dailyFatGoalG: event.target.checked ? profile.dailyFatGoalG : undefined
+                        })
+                      }
+                    />
+                    Enable goals
+                  </label>
+                  <button
+                    type="button"
+                    disabled={profiles.length <= 1}
+                    onClick={() => {
+                      if (window.confirm(`Delete profile ${profile.name}?`)) {
+                        deleteProfile(profile.id);
+                      }
+                    }}
+                    className="col-span-1 rounded-md border border-red-300 px-2 py-1.5 text-xs text-red-700 disabled:opacity-40"
+                  >
+                    Del
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  disabled={profiles.length <= 1}
-                  onClick={() => {
-                    if (window.confirm(`Delete profile ${profile.name}?`)) {
-                      deleteProfile(profile.id);
-                    }
-                  }}
-                  className="col-span-1 rounded-md border border-red-300 px-2 py-1.5 text-xs text-red-700 disabled:opacity-40"
-                >
-                  Del
-                </button>
+
+                {profile.goalEnabled && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Calories goal</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={profile.dailyCalorieGoal ?? ''}
+                        onChange={(event) =>
+                          updateProfile(profile.id, {
+                            dailyCalorieGoal: Math.max(1, Number(event.target.value) || 0)
+                          })
+                        }
+                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Protein g</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={profile.dailyProteinGoalG ?? ''}
+                        onChange={(event) =>
+                          updateProfile(profile.id, {
+                            dailyProteinGoalG: optionalNumber(event.target.value)
+                          })
+                        }
+                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Carbs g</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={profile.dailyCarbsGoalG ?? ''}
+                        onChange={(event) =>
+                          updateProfile(profile.id, {
+                            dailyCarbsGoalG: optionalNumber(event.target.value)
+                          })
+                        }
+                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">Fat g</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={profile.dailyFatGoalG ?? ''}
+                        onChange={(event) =>
+                          updateProfile(profile.id, {
+                            dailyFatGoalG: optionalNumber(event.target.value)
+                          })
+                        }
+                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
             ))}
 
@@ -777,8 +1005,8 @@ export default function App() {
           </div>
         </Modal>
 
-        <Modal open={duplicateModalOpen} onClose={() => setDuplicateModalOpen(false)} title="Duplicate Slot To">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Modal open={duplicateModalOpen} onClose={() => setDuplicateModalOpen(false)} title="Duplicate Section To">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <label className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700">Target Day</span>
               <select
@@ -810,11 +1038,24 @@ export default function App() {
             </label>
 
             <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">Section</span>
+              <select
+                value={duplicateTargetType}
+                onChange={(event) => setDuplicateTargetType(event.target.value as 'family' | 'profile')}
+                className="w-full rounded-md border border-slate-300 px-3 py-2"
+              >
+                <option value="family">Family</option>
+                <option value="profile">Person</option>
+              </select>
+            </label>
+
+            <label className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700">Target Person</span>
               <select
                 value={duplicateTargetProfile}
+                disabled={duplicateTargetType !== 'profile'}
                 onChange={(event) => setDuplicateTargetProfile(event.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:opacity-40"
               >
                 {profiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
@@ -837,11 +1078,12 @@ export default function App() {
               type="button"
               className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
               onClick={() => {
-                if (!duplicateSource || !duplicateTargetProfile) return;
+                if (!duplicateSource) return;
                 duplicateCell(duplicateSource, {
                   mealType: duplicateTargetMeal,
                   day: duplicateTargetDay,
-                  profileId: duplicateTargetProfile
+                  targetType: duplicateTargetType,
+                  profileId: duplicateTargetType === 'profile' ? duplicateTargetProfile : undefined
                 });
                 setDuplicateModalOpen(false);
               }}

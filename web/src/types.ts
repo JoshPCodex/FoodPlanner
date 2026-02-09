@@ -1,14 +1,26 @@
 export type IngredientCategory = 'Protein' | 'Dairy' | 'Produce' | 'Pantry' | 'Other';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
+export interface NutritionInfo {
+  calories?: number;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+}
+
 export interface Profile {
   id: string;
   name: string;
   color: string;
+  goalEnabled?: boolean;
+  dailyCalorieGoal?: number;
+  dailyProteinGoalG?: number;
+  dailyCarbsGoalG?: number;
+  dailyFatGoalG?: number;
   createdAt: string;
 }
 
-export interface Ingredient {
+export interface Ingredient extends NutritionInfo {
   id: string;
   name: string;
   category: IngredientCategory;
@@ -40,8 +52,7 @@ export interface IngredientRef {
   qty: number;
 }
 
-export interface PersonCellEntry {
-  profileId: string;
+export interface SlotEntry {
   mealId?: string;
   adHocMealName?: string;
   ingredientRefs: IngredientRef[];
@@ -50,7 +61,10 @@ export interface PersonCellEntry {
   isLeftovers?: boolean;
 }
 
-export type CellEntry = Record<string, PersonCellEntry | null>;
+export interface CellEntry {
+  family: SlotEntry | null;
+  profiles: Record<string, SlotEntry | null>;
+}
 
 export interface WeekPlan {
   weekStartDate: string;
