@@ -9,22 +9,23 @@ import type {
   IngredientRef,
   Meal,
   MealType,
-  PersonCellEntry,
   PlannerExportShape,
   Profile,
   ReceiptDraftItem,
+  SlotEntry,
   WeekPlan
 } from '../types';
 
-const STORAGE_KEY = 'meal-bubble-planner-v2';
+const STORAGE_KEY = 'meal-bubble-planner-v3';
 
 interface CellAddress {
   mealType: MealType;
   day: number;
 }
 
-interface SlotAddress extends CellAddress {
-  profileId: string;
+export interface SlotAddress extends CellAddress {
+  targetType: 'family' | 'profile';
+  profileId?: string;
 }
 
 interface PlannerState {
@@ -41,7 +42,15 @@ interface PlannerState {
   setInventorySort: (value: 'category' | 'expiry') => void;
 
   addProfile: (input: { name: string; color: string }) => void;
-  updateProfile: (id: string, updates: Partial<Pick<Profile, 'name' | 'color'>>) => void;
+  updateProfile: (
+    id: string,
+    updates: Partial<
+      Pick<
+        Profile,
+        'name' | 'color' | 'goalEnabled' | 'dailyCalorieGoal' | 'dailyProteinGoalG' | 'dailyCarbsGoalG' | 'dailyFatGoalG'
+      >
+    >
+  ) => void;
   deleteProfile: (id: string) => void;
 
   addOrMergeIngredient: (input: Omit<Ingredient, 'id' | 'createdAt'> & { id?: string }) => void;
@@ -82,9 +91,8 @@ function normalizeName(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, ' ');
 }
 
-function defaultPersonEntry(profileId: string): PersonCellEntry {
+function defaultSlotEntry(): SlotEntry {
   return {
-    profileId,
     ingredientRefs: [],
     servings: 2
   };
@@ -102,7 +110,7 @@ function createEmptyWeekPlan(weekStartDate: string): WeekPlan {
   };
 }
 
-function clonePersonEntry(entry: PersonCellEntry | null | undefined): PersonCellEntry | null {
+function cloneSlot(entry: SlotEntry | null | undefined): SlotEntry | null {
   if (!entry) return null;
   return {
     ...entry,
@@ -112,11 +120,15 @@ function clonePersonEntry(entry: PersonCellEntry | null | undefined): PersonCell
 
 function cloneCell(cell: CellEntry | null): CellEntry | null {
   if (!cell) return null;
-  const result: CellEntry = {};
-  Object.entries(cell).forEach(([profileId, value]) => {
-    result[profileId] = clonePersonEntry(value);
+  const profiles: Record<string, SlotEntry | null> = {};
+  Object.entries(cell.profiles ?? {}).forEach(([profileId, entry]) => {
+    profiles[profileId] = cloneSlot(entry);
   });
-  return result;
+
+  return {
+    family: cloneSlot(cell.family),
+    profiles
+  };
 }
 
 function clonePlan(plan: WeekPlan): WeekPlan {
@@ -152,25 +164,58 @@ function getCell(plan: WeekPlan, address: CellAddress): CellEntry | null {
   return plan.grid[address.mealType][address.day] ?? null;
 }
 
-function getSlot(plan: WeekPlan, address: SlotAddress): PersonCellEntry | null {
-  const cell = getCell(plan, address);
-  if (!cell) return null;
-  return clonePersonEntry(cell[address.profileId]);
+function slotKey(address: SlotAddress): string {
+  if (address.targetType === 'family') return 'family';
+  return address.profileId ?? '';
 }
 
-function setSlot(plan: WeekPlan, address: SlotAddress, value: PersonCellEntry | null): void {
-  const cell = getCell(plan, address) ?? {};
-  const nextCell: CellEntry = { ...cell, [address.profileId]: value ? clonePersonEntry(value) : null };
+function getSlot(plan: WeekPlan, address: SlotAddress): SlotEntry | null {
+  const cell = getCell(plan, address);
+  if (!cell) return null;
 
-  const hasAny = Object.values(nextCell).some((entry) => Boolean(entry));
+  if (address.targetType === 'family') {
+    return cloneSlot(cell.family);
+  }
+
+  if (!address.profileId) return null;
+  return cloneSlot(cell.profiles[address.profileId]);
+}
+
+function setSlot(plan: WeekPlan, address: SlotAddress, value: SlotEntry | null): void {
+  const existing = getCell(plan, address) ?? { family: null, profiles: {} };
+  const nextCell: CellEntry = {
+    family: cloneSlot(existing.family),
+    profiles: { ...existing.profiles }
+  };
+
+  if (address.targetType === 'family') {
+    nextCell.family = value ? cloneSlot(value) : null;
+  } else if (address.profileId) {
+    nextCell.profiles[address.profileId] = value ? cloneSlot(value) : null;
+  }
+
+  const hasAnyProfile = Object.values(nextCell.profiles).some((entry) => Boolean(entry));
+  const hasAny = Boolean(nextCell.family) || hasAnyProfile;
   plan.grid[address.mealType][address.day] = hasAny ? nextCell : null;
 }
 
 function baseProfiles(): Profile[] {
   const now = new Date().toISOString();
   return [
-    { id: createId('profile'), name: 'Me', color: '#0ea5e9', createdAt: now },
-    { id: createId('profile'), name: 'Wife', color: '#f97316', createdAt: now }
+    {
+      id: createId('profile'),
+      name: 'Me',
+      color: '#0ea5e9',
+      goalEnabled: false,
+      createdAt: now
+    },
+    {
+      id: createId('profile'),
+      name: 'Erica',
+      color: '#f97316',
+      goalEnabled: false,
+      createdAt: now
+    }
   ];
 }
 
@@ -256,34 +301,53 @@ function normalizeWeekPlan(plan: WeekPlan, primaryProfileId: string): WeekPlan {
         };
 
         return {
-          [primaryProfileId]: {
-            profileId: primaryProfileId,
+          family: {
             mealId: legacy.mealId,
             adHocMealName: legacy.adHocMealName,
             ingredientRefs: legacy.ingredientRefs ?? [],
             servings: legacy.servings ?? 2,
             notes: legacy.notes,
             isLeftovers: legacy.isLeftovers
-          }
+          },
+          profiles: {}
         };
       }
 
-      const converted: CellEntry = {};
-      Object.entries(rawCell as CellEntry).forEach(([profileId, entry]) => {
-        if (!entry) {
-          converted[profileId] = null;
-          return;
-        }
+      if (typeof rawCell === 'object' && 'family' in rawCell && 'profiles' in rawCell) {
+        const modern = rawCell as unknown as CellEntry;
+        const profiles: Record<string, SlotEntry | null> = {};
+        Object.entries(modern.profiles ?? {}).forEach(([profileId, slot]) => {
+          profiles[profileId] = cloneSlot(slot);
+        });
 
-        converted[profileId] = {
-          ...entry,
-          profileId,
-          ingredientRefs: entry.ingredientRefs ?? []
+        const hasAnyProfile = Object.values(profiles).some((entry) => Boolean(entry));
+        const family = cloneSlot(modern.family);
+        if (!family && !hasAnyProfile) return null;
+
+        return {
+          family,
+          profiles
         };
+      }
+
+      const legacyProfiles = rawCell as unknown as Record<string, SlotEntry | null>;
+      const profiles: Record<string, SlotEntry | null> = {};
+      Object.entries(legacyProfiles).forEach(([profileId, slot]) => {
+        profiles[profileId] = cloneSlot(slot);
       });
 
-      const hasAny = Object.values(converted).some((entry) => Boolean(entry));
-      return hasAny ? converted : null;
+      const hasAny = Object.values(profiles).some((entry) => Boolean(entry));
+      if (!hasAny) return null;
+
+      if (!profiles[primaryProfileId]) {
+        const firstExisting = Object.values(profiles).find((entry) => Boolean(entry));
+        profiles[primaryProfileId] = cloneSlot(firstExisting ?? null);
+      }
+
+      return {
+        family: null,
+        profiles
+      };
     });
   });
 
@@ -345,6 +409,7 @@ export const usePlannerStore = create<PlannerState>()(
               id: createId('profile'),
               name: name.trim() || `Person ${state.profiles.length + 1}`,
               color,
+              goalEnabled: false,
               createdAt: new Date().toISOString()
             }
           ]
@@ -353,15 +418,28 @@ export const usePlannerStore = create<PlannerState>()(
 
       updateProfile: (id, updates) => {
         set((state) => ({
-          profiles: state.profiles.map((profile) =>
-            profile.id === id
-              ? {
-                  ...profile,
-                  name: updates.name?.trim() || profile.name,
-                  color: updates.color ?? profile.color
-                }
-              : profile
-          )
+          profiles: state.profiles.map((profile) => {
+            if (profile.id !== id) return profile;
+            const next: Profile = {
+              ...profile,
+              name: updates.name?.trim() || profile.name,
+              color: updates.color ?? profile.color,
+              goalEnabled: updates.goalEnabled ?? profile.goalEnabled,
+              dailyCalorieGoal: updates.dailyCalorieGoal ?? profile.dailyCalorieGoal,
+              dailyProteinGoalG: updates.dailyProteinGoalG ?? profile.dailyProteinGoalG,
+              dailyCarbsGoalG: updates.dailyCarbsGoalG ?? profile.dailyCarbsGoalG,
+              dailyFatGoalG: updates.dailyFatGoalG ?? profile.dailyFatGoalG
+            };
+
+            if (!next.goalEnabled) {
+              next.dailyCalorieGoal = undefined;
+              next.dailyProteinGoalG = undefined;
+              next.dailyCarbsGoalG = undefined;
+              next.dailyFatGoalG = undefined;
+            }
+
+            return next;
+          })
         }));
       },
 
@@ -377,9 +455,13 @@ export const usePlannerStore = create<PlannerState>()(
             (Object.keys(cloned.grid) as MealType[]).forEach((mealType) => {
               cloned.grid[mealType] = cloned.grid[mealType].map((cell) => {
                 if (!cell) return null;
-                const nextCell = { ...cell };
-                delete nextCell[id];
-                return Object.values(nextCell).some((entry) => Boolean(entry)) ? nextCell : null;
+                const nextCell: CellEntry = {
+                  family: cloneSlot(cell.family),
+                  profiles: { ...cell.profiles }
+                };
+                delete nextCell.profiles[id];
+                const hasAnyProfile = Object.values(nextCell.profiles).some((entry) => Boolean(entry));
+                return nextCell.family || hasAnyProfile ? nextCell : null;
               });
             });
             nextWeekPlans[weekStart] = cloned;
@@ -407,7 +489,11 @@ export const usePlannerStore = create<PlannerState>()(
                       category: input.category ?? ingredient.category,
                       expirationDate: input.expirationDate ?? ingredient.expirationDate,
                       notes: input.notes ?? ingredient.notes,
-                      pinned: input.pinned ?? ingredient.pinned
+                      pinned: input.pinned ?? ingredient.pinned,
+                      calories: input.calories ?? ingredient.calories,
+                      protein_g: input.protein_g ?? ingredient.protein_g,
+                      carbs_g: input.carbs_g ?? ingredient.carbs_g,
+                      fat_g: input.fat_g ?? ingredient.fat_g
                     }
                   : ingredient
               )
@@ -422,7 +508,11 @@ export const usePlannerStore = create<PlannerState>()(
             count: Math.max(0, input.count),
             expirationDate: input.expirationDate,
             notes: input.notes,
-            pinned: input.pinned
+            pinned: input.pinned,
+            calories: input.calories,
+            protein_g: input.protein_g,
+            carbs_g: input.carbs_g,
+            fat_g: input.fat_g
           };
 
           return { ingredients: [ingredient, ...state.ingredients] };
@@ -525,7 +615,7 @@ export const usePlannerStore = create<PlannerState>()(
           const ingredient = state.ingredients.find((item) => item.id === ingredientId);
           if (!ingredient) return state;
 
-          const current = getSlot(plan, address) ?? defaultPersonEntry(address.profileId);
+          const current = getSlot(plan, address) ?? defaultSlotEntry();
           current.ingredientRefs = addIngredientRef(current.ingredientRefs, {
             ingredientId: ingredient.id,
             name: ingredient.name,
@@ -551,7 +641,7 @@ export const usePlannerStore = create<PlannerState>()(
 
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const current = getSlot(plan, address) ?? defaultPersonEntry(address.profileId);
+          const current = getSlot(plan, address) ?? defaultSlotEntry();
           current.mealId = meal.id;
           current.adHocMealName = undefined;
           current.servings = current.servings || meal.servingsDefault || 2;
@@ -586,17 +676,16 @@ export const usePlannerStore = create<PlannerState>()(
 
       moveOrSwapCell: (source, target) => {
         set((state) => {
-          if (source.day === target.day && source.mealType === target.mealType && source.profileId === target.profileId) {
+          if (slotKey(source) === slotKey(target) && source.day === target.day && source.mealType === target.mealType) {
             return state;
           }
 
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-
           const sourceEntry = getSlot(plan, source);
           if (!sourceEntry) return state;
-          const targetEntry = getSlot(plan, target);
 
+          const targetEntry = getSlot(plan, target);
           setSlot(plan, source, targetEntry);
           setSlot(plan, target, sourceEntry);
 
@@ -635,11 +724,11 @@ export const usePlannerStore = create<PlannerState>()(
           const sourceEntry = getSlot(plan, address);
           if (!sourceEntry) return state;
 
-          const leftovers = clonePersonEntry(sourceEntry);
+          const leftovers = cloneSlot(sourceEntry);
           if (!leftovers) return state;
           leftovers.isLeftovers = true;
 
-          setSlot(plan, { mealType: 'lunch', day: address.day + 1, profileId: address.profileId }, leftovers);
+          setSlot(plan, { mealType: 'lunch', day: address.day + 1, targetType: address.targetType, profileId: address.profileId }, leftovers);
           weekPlans[state.currentWeekStartDate] = plan;
           return { weekPlans };
         });
@@ -650,7 +739,7 @@ export const usePlannerStore = create<PlannerState>()(
           const validServings = Math.max(1, Math.floor(servings));
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const current = getSlot(plan, address) ?? defaultPersonEntry(address.profileId);
+          const current = getSlot(plan, address) ?? defaultSlotEntry();
           current.servings = validServings;
           setSlot(plan, address, current);
           weekPlans[state.currentWeekStartDate] = plan;

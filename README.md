@@ -1,133 +1,60 @@
-# Meal Bubble Planner (MVP)
+# Meal Bubble Planner
 
-Meal Bubble Planner is a Docker-first weekly meal planner for two people with draggable ingredient bubbles, pinned meal favorites, receipt OCR, and plan export to PNG/JPG.
+A simple weekly meal planner for home use. Drag ingredients and favorite meals into the calendar, assign them to Family or a person, and keep a live inventory.
 
-## Run (Docker only)
+## Quick Start (Docker only)
 
-Prerequisite: Docker Desktop for Mac.
-No local `node`, `npm`, or other runtime dependencies are required.
+You only need Docker Desktop.
 
-1. Make sure Docker Desktop is running and **not paused**.
-2. From the repo root, run:
+1. Install Docker Desktop for Mac.
+2. Open Docker Desktop and make sure it is running.
+3. In this project folder, run:
 
 ```bash
 docker compose up --build
 ```
 
-3. Open:
-- Web app: [http://localhost:5173](http://localhost:5173)
-- Exporter health: [http://localhost:8787/health](http://localhost:8787/health)
+4. Open the app:
 
-## Services
+[http://localhost:5173](http://localhost:5173)
 
-- `web`: React + TypeScript + Vite + Tailwind app (port `5173`)
-- `exporter`: Node + Express + Playwright image renderer (port `8787`)
+## What Is Running
 
-The `web` service calls `POST /api/export` (proxied to `exporter`) to generate consistent image exports.
+- `web` (React + Vite): app UI on `http://localhost:5173`
+- `exporter` (Node + Playwright): local image export service used by the app
 
-## Persist Data
+## Main Features
 
-Data persistence uses two mechanisms:
+- Weekly meal grid (Breakfast, Lunch, Dinner, Snack)
+- Inventory bubbles with counts, categories, expiration notes
+- Pinned favorite meals you can drag into the calendar
+- Family + per-person assignment inside each cell
+- Profile manager (name, color, daily calorie goal, optional macro goals)
+- Receipt scanning + AI import helper for quick inventory updates
+- JSON export/import for backup
+- Image export of the week plan
 
-1. Browser `localStorage` for app state (inventory, meals, week plans).
-2. JSON export/import for backup/transfer.
+## Nutrition Tracking
 
-Also, container-only `node_modules` are preserved using named Docker volumes:
-- `web_node_modules`
-- `exporter_node_modules`
+- Ingredients can store nutrition per 1 inventory unit:
+  - calories
+  - optional protein/carbs/fat (grams)
+- Profile goals:
+  - daily calorie goal (when enabled)
+  - optional macro goals (protein/carbs/fat)
+- Day headers show per-profile progress bars for calories and macros.
 
-`node_modules` should never be created on the host because source code is bind-mounted while `/app/node_modules` is isolated to named Docker volumes.
+## Export Notes
 
-## Use the App
-
-Top bar actions:
-- `Scan Receipt`: upload receipt image, run in-browser OCR (Tesseract.js), review/edit parsed lines, add to inventory
-- `AI Import Helper`: copy a ChatGPT prompt for photo/receipt analysis, paste AI text output, parse, review, and import to inventory
-- `Profiles`: add/remove people, rename them, and pick a color for each profile
-- `Add Ingredient`
-- `Add Meal`
-- `Clear Inventory`: empties all current ingredients so you can start fresh
-- `Export to Image`
-- `Export JSON`
-- `Import JSON`
-- `Reset Demo Data`
-
-Main behaviors:
-- Drag ingredient bubbles into calendar cells: adds chip and decrements inventory by 1
-- Repeated ingredient in same cell merges into a single chip with `xN`
-- Drag pinned meal card into a person's lane inside a cell: sets meal title + ingredient chips for that person, decrements inventory by ingredient qty
-- Each meal/day cell is split into horizontal person lanes based on profiles, so multiple people can have separate meals in the same cell
-- Drag a person's meal chip between lanes/cells: move to empty lane, swap when destination occupied
-- Right-click or long-press on person lanes/bubbles for context actions
-
-## AI Photo/Receipt Import Flow
-
-Use this when you want ChatGPT to interpret photos and produce import-ready inventory text:
-
-1. Click `AI Import Helper`.
-2. Click `Copy Prompt` and paste it into ChatGPT.
-3. Attach your receipt/fridge/grocery photos to ChatGPT and run the prompt.
-4. Paste ChatGPT output (lines like `egg x12`, `banana x5`, `milk`) into the app.
-5. Click `Parse List`, review/edit categories and counts, then `Import to Inventory`.
-
-The parser also accepts lines without quantity (`milk`) and treats them as `x1`.
-It also supports raw pasted receipt text and applies quantity rules like `2 x $...`, `6 ct`, and multiplicative `2 x (6 ct eggs)` -> `egg x12`.
-
-## Export Plan as Image (PNG/JPG)
-
-In UI:
-1. Click `Export to Image`
-2. The app sends current week plan data to web endpoint `POST /api/export`, which proxies to `exporter` `POST /export`
-3. A PNG download starts automatically with name:
-   - `meal-plan-YYYY-MM-DD.png`
-
-API supports JPEG too:
-- Send `format: "jpeg"` (or `"jpg"`) in request payload.
-
-## Demo Data
-
-On first run, demo data is loaded:
-
-Ingredients:
-- chicken, pork, steak, cheese, milk, eggs, lettuce, carrots, cucumber, bread, penne, spaghetti
-
-Pinned favorites:
-- Chicken + Penne
-- Spaghetti + Meatballs
-- Bacon + Egg + Cheese
-
-## Architecture Note (Exporter)
-
-`exporter` uses Playwright Chromium in a container (`mcr.microsoft.com/playwright`) to render a dedicated fixed-size HTML export template server-side. The endpoint:
-
-- `POST /export`
-- Input: `weekStartDate`, `weekPlan`, optional `theme/layout`, optional `format`
-- Output: binary image (`image/png` default, `image/jpeg` when requested)
-
-This avoids client/browser screenshot inconsistencies and keeps exports deterministic across machines.
-The web app calls exporter through a Vite dev proxy (`/api/export` -> `exporter:8787/export`) to avoid cross-origin/localhost connectivity issues in Docker.
+- **Export to Image** downloads a PNG of the current week.
+- **Export JSON** saves your app data.
+- **Import JSON** restores data from a previous export.
 
 ## Troubleshooting
 
-If volumes or dependencies get into a bad state, reset Docker volumes:
+If dependencies/volumes get out of sync, reset and rebuild:
 
 ```bash
 docker compose down -v
+docker compose up --build
 ```
-
-## Ambiguity Choices Made
-
-To keep UX simple for a normal couple in one-pass MVP:
-
-1. `Make leftovers` copies selected cell to **next day lunch** only within the same visible week.
-2. Meal drop consumption rule: each meal ingredient consumes exactly `qty` units (default `1`) from matching inventory name.
-3. Pinned meal reorder is implemented with Left/Right controls on each card.
-4. Context actions `Set servings`, `Save cell as meal`, and some ingredient edits use lightweight prompt dialogs for speed.
-5. Image export button defaults to PNG download; JPEG is supported by exporter API payload.
-6. AI import parser normalizes names and strips common packaging/branding words for simpler inventory labels.
-
-## Project Structure
-
-- `/docker-compose.yml`
-- `/web` (frontend service)
-- `/exporter` (Playwright export service)
