@@ -1,0 +1,14 @@
+{
+  "name": "meal-bubble-exporter",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "playwright": "^1.51.0"
+  }
+}

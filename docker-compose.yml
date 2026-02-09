@@ -1,0 +1,30 @@
+services:
+  web:
+    build:
+      context: ./web
+    container_name: meal-bubble-web
+    ports:
+      - "5173:5173"
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+    depends_on:
+      - exporter
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+
+  exporter:
+    build:
+      context: ./exporter
+    container_name: meal-bubble-exporter
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./exporter:/app
+      - exporter_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev"
+
+volumes:
+  web_node_modules:
+  exporter_node_modules:
