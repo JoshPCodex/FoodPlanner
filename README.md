@@ -43,8 +43,10 @@ Also, container-only `node_modules` are preserved using named Docker volumes:
 Top bar actions:
 - `Scan Receipt`: upload receipt image, run in-browser OCR (Tesseract.js), review/edit parsed lines, add to inventory
 - `AI Import Helper`: copy a ChatGPT prompt for photo/receipt analysis, paste AI text output, parse, review, and import to inventory
+- `Profiles`: add/remove people, rename them, and pick a color for each profile
 - `Add Ingredient`
 - `Add Meal`
+- `Clear Inventory`: empties all current ingredients so you can start fresh
 - `Export to Image`
 - `Export JSON`
 - `Import JSON`
@@ -53,9 +55,10 @@ Top bar actions:
 Main behaviors:
 - Drag ingredient bubbles into calendar cells: adds chip and decrements inventory by 1
 - Repeated ingredient in same cell merges into a single chip with `xN`
-- Drag pinned meal card into a cell: sets meal title + ingredient chips, decrements inventory by ingredient qty
-- Drag meal title chip between cells: move to empty cell, swap when destination occupied
-- Right-click or long-press on cells/bubbles for context actions
+- Drag pinned meal card into a person's lane inside a cell: sets meal title + ingredient chips for that person, decrements inventory by ingredient qty
+- Each meal/day cell is split into horizontal person lanes based on profiles, so multiple people can have separate meals in the same cell
+- Drag a person's meal chip between lanes/cells: move to empty lane, swap when destination occupied
+- Right-click or long-press on person lanes/bubbles for context actions
 
 ## AI Photo/Receipt Import Flow
 

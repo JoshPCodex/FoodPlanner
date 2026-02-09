@@ -1,30 +1,36 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { CATEGORIES, MEAL_TYPES } from '../constants';
+import { CATEGORIES } from '../constants';
 import { addDays, parseISODate, startOfWeekMonday, toISODate } from '../utils/date';
 import type {
-  AssignedTo,
   CellEntry,
   Ingredient,
   IngredientCategory,
   IngredientRef,
   Meal,
   MealType,
+  PersonCellEntry,
   PlannerExportShape,
+  Profile,
   ReceiptDraftItem,
   WeekPlan
 } from '../types';
 
-const STORAGE_KEY = 'meal-bubble-planner-v1';
+const STORAGE_KEY = 'meal-bubble-planner-v2';
 
 interface CellAddress {
   mealType: MealType;
   day: number;
 }
 
+interface SlotAddress extends CellAddress {
+  profileId: string;
+}
+
 interface PlannerState {
   ingredients: Ingredient[];
   meals: Meal[];
+  profiles: Profile[];
   pinnedMealIds: string[];
   weekPlans: Record<string, WeekPlan>;
   currentWeekStartDate: string;
@@ -34,11 +40,16 @@ interface PlannerState {
   setWeek: (weekStartDate: string) => void;
   setInventorySort: (value: 'category' | 'expiry') => void;
 
+  addProfile: (input: { name: string; color: string }) => void;
+  updateProfile: (id: string, updates: Partial<Pick<Profile, 'name' | 'color'>>) => void;
+  deleteProfile: (id: string) => void;
+
   addOrMergeIngredient: (input: Omit<Ingredient, 'id' | 'createdAt'> & { id?: string }) => void;
   updateIngredient: (id: string, updates: Partial<Omit<Ingredient, 'id' | 'createdAt'>>) => void;
   deleteIngredient: (id: string) => void;
   adjustIngredientCount: (id: string, delta: number) => void;
   toggleIngredientPinned: (id: string) => void;
+  clearInventory: () => void;
 
   addMeal: (input: Omit<Meal, 'id' | 'createdAt'> & { id?: string }) => void;
   updateMeal: (id: string, updates: Partial<Omit<Meal, 'id' | 'createdAt'>>) => void;
@@ -46,15 +57,14 @@ interface PlannerState {
   toggleMealPinned: (id: string) => void;
   movePinnedMeal: (mealId: string, direction: 'left' | 'right') => void;
 
-  dropIngredientToCell: (address: CellAddress, ingredientId: string) => void;
-  dropMealToCell: (address: CellAddress, mealId: string) => void;
-  moveOrSwapCell: (source: CellAddress, target: CellAddress) => void;
-  assignCell: (address: CellAddress, assignedTo: AssignedTo) => void;
-  clearCell: (address: CellAddress) => void;
-  duplicateCell: (source: CellAddress, target: CellAddress) => void;
-  makeLeftovers: (address: CellAddress) => void;
-  setCellServings: (address: CellAddress, servings: number) => void;
-  saveCellAsMeal: (address: CellAddress, mealName: string) => void;
+  dropIngredientToCell: (address: SlotAddress, ingredientId: string) => void;
+  dropMealToCell: (address: SlotAddress, mealId: string) => void;
+  moveOrSwapCell: (source: SlotAddress, target: SlotAddress) => void;
+  clearCell: (address: SlotAddress) => void;
+  duplicateCell: (source: SlotAddress, target: SlotAddress) => void;
+  makeLeftovers: (address: SlotAddress) => void;
+  setCellServings: (address: SlotAddress, servings: number) => void;
+  saveCellAsMeal: (address: SlotAddress, mealName: string) => void;
 
   mergeReceiptItems: (items: ReceiptDraftItem[]) => void;
 
@@ -72,10 +82,10 @@ function normalizeName(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, ' ');
 }
 
-function defaultCellEntry(): CellEntry {
+function defaultPersonEntry(profileId: string): PersonCellEntry {
   return {
+    profileId,
     ingredientRefs: [],
-    assignedTo: 'both',
     servings: 2
   };
 }
@@ -92,12 +102,21 @@ function createEmptyWeekPlan(weekStartDate: string): WeekPlan {
   };
 }
 
-function cloneCell(entry: CellEntry | null): CellEntry | null {
+function clonePersonEntry(entry: PersonCellEntry | null | undefined): PersonCellEntry | null {
   if (!entry) return null;
   return {
     ...entry,
     ingredientRefs: entry.ingredientRefs.map((ref) => ({ ...ref }))
   };
+}
+
+function cloneCell(cell: CellEntry | null): CellEntry | null {
+  if (!cell) return null;
+  const result: CellEntry = {};
+  Object.entries(cell).forEach(([profileId, value]) => {
+    result[profileId] = clonePersonEntry(value);
+  });
+  return result;
 }
 
 function clonePlan(plan: WeekPlan): WeekPlan {
@@ -133,8 +152,26 @@ function getCell(plan: WeekPlan, address: CellAddress): CellEntry | null {
   return plan.grid[address.mealType][address.day] ?? null;
 }
 
-function setCell(plan: WeekPlan, address: CellAddress, value: CellEntry | null): void {
-  plan.grid[address.mealType][address.day] = value;
+function getSlot(plan: WeekPlan, address: SlotAddress): PersonCellEntry | null {
+  const cell = getCell(plan, address);
+  if (!cell) return null;
+  return clonePersonEntry(cell[address.profileId]);
+}
+
+function setSlot(plan: WeekPlan, address: SlotAddress, value: PersonCellEntry | null): void {
+  const cell = getCell(plan, address) ?? {};
+  const nextCell: CellEntry = { ...cell, [address.profileId]: value ? clonePersonEntry(value) : null };
+
+  const hasAny = Object.values(nextCell).some((entry) => Boolean(entry));
+  plan.grid[address.mealType][address.day] = hasAny ? nextCell : null;
+}
+
+function baseProfiles(): Profile[] {
+  const now = new Date().toISOString();
+  return [
+    { id: createId('profile'), name: 'Me', color: '#0ea5e9', createdAt: now },
+    { id: createId('profile'), name: 'Wife', color: '#f97316', createdAt: now }
+  ];
 }
 
 function baseIngredients(): Ingredient[] {
@@ -201,12 +238,66 @@ function baseMeals(): Meal[] {
   ];
 }
 
+function normalizeWeekPlan(plan: WeekPlan, primaryProfileId: string): WeekPlan {
+  const normalized = createEmptyWeekPlan(plan.weekStartDate);
+
+  (Object.keys(plan.grid) as MealType[]).forEach((mealType) => {
+    normalized.grid[mealType] = plan.grid[mealType].map((rawCell) => {
+      if (!rawCell) return null;
+
+      if (typeof rawCell === 'object' && 'ingredientRefs' in rawCell) {
+        const legacy = rawCell as unknown as {
+          mealId?: string;
+          adHocMealName?: string;
+          ingredientRefs: IngredientRef[];
+          servings?: number;
+          notes?: string;
+          isLeftovers?: boolean;
+        };
+
+        return {
+          [primaryProfileId]: {
+            profileId: primaryProfileId,
+            mealId: legacy.mealId,
+            adHocMealName: legacy.adHocMealName,
+            ingredientRefs: legacy.ingredientRefs ?? [],
+            servings: legacy.servings ?? 2,
+            notes: legacy.notes,
+            isLeftovers: legacy.isLeftovers
+          }
+        };
+      }
+
+      const converted: CellEntry = {};
+      Object.entries(rawCell as CellEntry).forEach(([profileId, entry]) => {
+        if (!entry) {
+          converted[profileId] = null;
+          return;
+        }
+
+        converted[profileId] = {
+          ...entry,
+          profileId,
+          ingredientRefs: entry.ingredientRefs ?? []
+        };
+      });
+
+      const hasAny = Object.values(converted).some((entry) => Boolean(entry));
+      return hasAny ? converted : null;
+    });
+  });
+
+  return normalized;
+}
+
 function createDemoState() {
+  const profiles = baseProfiles();
   const weekStart = toISODate(startOfWeekMonday(new Date()));
   const meals = baseMeals();
   return {
     ingredients: baseIngredients(),
     meals,
+    profiles,
     pinnedMealIds: meals.map((meal) => meal.id),
     weekPlans: {
       [weekStart]: createEmptyWeekPlan(weekStart)
@@ -245,6 +336,61 @@ export const usePlannerStore = create<PlannerState>()(
       },
 
       setInventorySort: (value) => set({ inventorySort: value }),
+
+      addProfile: ({ name, color }) => {
+        set((state) => ({
+          profiles: [
+            ...state.profiles,
+            {
+              id: createId('profile'),
+              name: name.trim() || `Person ${state.profiles.length + 1}`,
+              color,
+              createdAt: new Date().toISOString()
+            }
+          ]
+        }));
+      },
+
+      updateProfile: (id, updates) => {
+        set((state) => ({
+          profiles: state.profiles.map((profile) =>
+            profile.id === id
+              ? {
+                  ...profile,
+                  name: updates.name?.trim() || profile.name,
+                  color: updates.color ?? profile.color
+                }
+              : profile
+          )
+        }));
+      },
+
+      deleteProfile: (id) => {
+        set((state) => {
+          if (state.profiles.length <= 1) return state;
+
+          const nextProfiles = state.profiles.filter((profile) => profile.id !== id);
+          const nextWeekPlans: Record<string, WeekPlan> = {};
+
+          Object.entries(state.weekPlans).forEach(([weekStart, plan]) => {
+            const cloned = clonePlan(plan);
+            (Object.keys(cloned.grid) as MealType[]).forEach((mealType) => {
+              cloned.grid[mealType] = cloned.grid[mealType].map((cell) => {
+                if (!cell) return null;
+                const nextCell = { ...cell };
+                delete nextCell[id];
+                return Object.values(nextCell).some((entry) => Boolean(entry)) ? nextCell : null;
+              });
+            });
+            nextWeekPlans[weekStart] = cloned;
+          });
+
+          return {
+            profiles: nextProfiles,
+            weekPlans: nextWeekPlans
+          };
+        });
+      },
 
       addOrMergeIngredient: (input) => {
         set((state) => {
@@ -319,6 +465,8 @@ export const usePlannerStore = create<PlannerState>()(
         }));
       },
 
+      clearInventory: () => set({ ingredients: [] }),
+
       addMeal: (input) => {
         const meal: Meal = {
           id: input.id ?? createId('meal'),
@@ -377,13 +525,13 @@ export const usePlannerStore = create<PlannerState>()(
           const ingredient = state.ingredients.find((item) => item.id === ingredientId);
           if (!ingredient) return state;
 
-          const current = getCell(plan, address) ?? defaultCellEntry();
+          const current = getSlot(plan, address) ?? defaultPersonEntry(address.profileId);
           current.ingredientRefs = addIngredientRef(current.ingredientRefs, {
             ingredientId: ingredient.id,
             name: ingredient.name,
             qty: 1
           });
-          setCell(plan, address, current);
+          setSlot(plan, address, current);
 
           weekPlans[state.currentWeekStartDate] = plan;
 
@@ -403,7 +551,7 @@ export const usePlannerStore = create<PlannerState>()(
 
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const current = getCell(plan, address) ?? defaultCellEntry();
+          const current = getSlot(plan, address) ?? defaultPersonEntry(address.profileId);
           current.mealId = meal.id;
           current.adHocMealName = undefined;
           current.servings = current.servings || meal.servingsDefault || 2;
@@ -412,8 +560,8 @@ export const usePlannerStore = create<PlannerState>()(
 
           meal.ingredients.forEach((item) => {
             const qty = Math.max(1, item.qty ?? 1);
-            const normalizedName = normalizeName(item.name);
-            const matched = ingredients.find((ingredient) => normalizeName(ingredient.name) === normalizedName);
+            const normalizedItemName = normalizeName(item.name);
+            const matched = ingredients.find((ingredient) => normalizeName(ingredient.name) === normalizedItemName);
 
             current.ingredientRefs = addIngredientRef(current.ingredientRefs, {
               ingredientId: matched?.id,
@@ -426,7 +574,7 @@ export const usePlannerStore = create<PlannerState>()(
             }
           });
 
-          setCell(plan, address, current);
+          setSlot(plan, address, current);
           weekPlans[state.currentWeekStartDate] = plan;
 
           return {
@@ -438,29 +586,20 @@ export const usePlannerStore = create<PlannerState>()(
 
       moveOrSwapCell: (source, target) => {
         set((state) => {
-          if (source.day === target.day && source.mealType === target.mealType) return state;
+          if (source.day === target.day && source.mealType === target.mealType && source.profileId === target.profileId) {
+            return state;
+          }
+
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
 
-          const sourceCell = getCell(plan, source);
-          if (!sourceCell) return state;
-          const targetCell = getCell(plan, target);
+          const sourceEntry = getSlot(plan, source);
+          if (!sourceEntry) return state;
+          const targetEntry = getSlot(plan, target);
 
-          setCell(plan, source, cloneCell(targetCell));
-          setCell(plan, target, cloneCell(sourceCell));
+          setSlot(plan, source, targetEntry);
+          setSlot(plan, target, sourceEntry);
 
-          weekPlans[state.currentWeekStartDate] = plan;
-          return { weekPlans };
-        });
-      },
-
-      assignCell: (address, assignedTo) => {
-        set((state) => {
-          const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
-          const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const current = getCell(plan, address) ?? defaultCellEntry();
-          current.assignedTo = assignedTo;
-          setCell(plan, address, current);
           weekPlans[state.currentWeekStartDate] = plan;
           return { weekPlans };
         });
@@ -470,7 +609,7 @@ export const usePlannerStore = create<PlannerState>()(
         set((state) => {
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          setCell(plan, address, null);
+          setSlot(plan, address, null);
           weekPlans[state.currentWeekStartDate] = plan;
           return { weekPlans };
         });
@@ -480,9 +619,9 @@ export const usePlannerStore = create<PlannerState>()(
         set((state) => {
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const sourceCell = getCell(plan, source);
-          if (!sourceCell) return state;
-          setCell(plan, target, cloneCell(sourceCell));
+          const sourceEntry = getSlot(plan, source);
+          if (!sourceEntry) return state;
+          setSlot(plan, target, sourceEntry);
           weekPlans[state.currentWeekStartDate] = plan;
           return { weekPlans };
         });
@@ -493,15 +632,14 @@ export const usePlannerStore = create<PlannerState>()(
           if (address.day >= 6) return state;
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const sourceCell = getCell(plan, address);
-          if (!sourceCell) return state;
+          const sourceEntry = getSlot(plan, address);
+          if (!sourceEntry) return state;
 
-          const leftovers = cloneCell(sourceCell);
+          const leftovers = clonePersonEntry(sourceEntry);
           if (!leftovers) return state;
           leftovers.isLeftovers = true;
-          leftovers.assignedTo = 'both';
 
-          setCell(plan, { mealType: 'lunch', day: address.day + 1 }, leftovers);
+          setSlot(plan, { mealType: 'lunch', day: address.day + 1, profileId: address.profileId }, leftovers);
           weekPlans[state.currentWeekStartDate] = plan;
           return { weekPlans };
         });
@@ -512,9 +650,9 @@ export const usePlannerStore = create<PlannerState>()(
           const validServings = Math.max(1, Math.floor(servings));
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const current = getCell(plan, address) ?? defaultCellEntry();
+          const current = getSlot(plan, address) ?? defaultPersonEntry(address.profileId);
           current.servings = validServings;
-          setCell(plan, address, current);
+          setSlot(plan, address, current);
           weekPlans[state.currentWeekStartDate] = plan;
           return { weekPlans };
         });
@@ -527,17 +665,17 @@ export const usePlannerStore = create<PlannerState>()(
         set((state) => {
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = weekPlans[state.currentWeekStartDate];
-          const cell = getCell(plan, address);
-          if (!cell) return state;
+          const slot = getSlot(plan, address);
+          if (!slot) return state;
 
           const meal: Meal = {
             id: createId('meal'),
             name: trimmed,
-            ingredients: cell.ingredientRefs.map((item) => ({
+            ingredients: slot.ingredientRefs.map((item) => ({
               name: item.name,
               qty: item.qty
             })),
-            servingsDefault: cell.servings || 2,
+            servingsDefault: slot.servings || 2,
             pinned: true,
             createdAt: new Date().toISOString()
           };
@@ -588,11 +726,20 @@ export const usePlannerStore = create<PlannerState>()(
           return;
         }
 
+        const profiles = payload.profiles && payload.profiles.length > 0 ? payload.profiles : baseProfiles();
+        const primaryProfileId = profiles[0]?.id ?? createId('profile');
+
+        const normalizedPlans: Record<string, WeekPlan> = {};
+        Object.entries(payload.weekPlans).forEach(([key, plan]) => {
+          normalizedPlans[key] = normalizeWeekPlan(plan, primaryProfileId);
+        });
+
         set(() => ({
           ingredients: payload.ingredients,
           meals: payload.meals,
+          profiles,
           pinnedMealIds: payload.pinnedMealIds ?? [],
-          weekPlans: payload.weekPlans,
+          weekPlans: normalizedPlans,
           currentWeekStartDate: payload.currentWeekStartDate,
           inventorySort: 'category'
         }));
@@ -609,6 +756,7 @@ export const usePlannerStore = create<PlannerState>()(
       partialize: (state) => ({
         ingredients: state.ingredients,
         meals: state.meals,
+        profiles: state.profiles,
         pinnedMealIds: state.pinnedMealIds,
         weekPlans: state.weekPlans,
         currentWeekStartDate: state.currentWeekStartDate,

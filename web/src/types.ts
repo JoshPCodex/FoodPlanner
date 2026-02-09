@@ -1,6 +1,12 @@
 export type IngredientCategory = 'Protein' | 'Dairy' | 'Produce' | 'Pantry' | 'Other';
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
-export type AssignedTo = 'both' | 'me' | 'wife';
+
+export interface Profile {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: string;
+}
 
 export interface Ingredient {
   id: string;
@@ -34,15 +40,17 @@ export interface IngredientRef {
   qty: number;
 }
 
-export interface CellEntry {
+export interface PersonCellEntry {
+  profileId: string;
   mealId?: string;
   adHocMealName?: string;
   ingredientRefs: IngredientRef[];
-  assignedTo: AssignedTo;
   servings: number;
   notes?: string;
   isLeftovers?: boolean;
 }
+
+export type CellEntry = Record<string, PersonCellEntry | null>;
 
 export interface WeekPlan {
   weekStartDate: string;
@@ -59,6 +67,7 @@ export interface ReceiptDraftItem {
 export interface PlannerExportShape {
   ingredients: Ingredient[];
   meals: Meal[];
+  profiles: Profile[];
   pinnedMealIds: string[];
   weekPlans: Record<string, WeekPlan>;
   currentWeekStartDate: string;

@@ -11,26 +11,20 @@ import { MealModal } from './components/MealModal';
 import { Modal } from './components/Modal';
 import { ReceiptScannerModal } from './components/ReceiptScannerModal';
 import { usePlannerStore } from './store/usePlannerStore';
-import type {
-  Ingredient,
-  IngredientCategory,
-  Meal,
-  MealType,
-  PlannerExportShape,
-  WeekPlan
-} from './types';
+import type { Ingredient, IngredientCategory, Meal, MealType, PersonCellEntry, PlannerExportShape, Profile, WeekPlan } from './types';
 import { addDays, formatDisplayDate, formatWeekLabel, parseISODate } from './utils/date';
 
-interface CellAddress {
+interface SlotAddress {
   mealType: MealType;
   day: number;
+  profileId: string;
 }
 
-interface CellMenuState {
-  type: 'cell';
+interface SlotMenuState {
+  type: 'slot';
   x: number;
   y: number;
-  address: CellAddress;
+  address: SlotAddress;
 }
 
 interface IngredientMenuState {
@@ -40,7 +34,7 @@ interface IngredientMenuState {
   ingredient: Ingredient;
 }
 
-type MenuState = CellMenuState | IngredientMenuState | null;
+type MenuState = SlotMenuState | IngredientMenuState | null;
 
 function emptyPlan(weekStartDate: string): WeekPlan {
   return {
@@ -54,12 +48,13 @@ function emptyPlan(weekStartDate: string): WeekPlan {
   };
 }
 
-function parseCellId(id: string): CellAddress | null {
-  const match = id.match(/^cell-(breakfast|lunch|dinner|snack)-([0-6])$/);
+function parseSlotId(id: string): SlotAddress | null {
+  const match = id.match(/^slot-(breakfast|lunch|dinner|snack)-([0-6])-(.+)$/);
   if (!match) return null;
   return {
     mealType: match[1] as MealType,
-    day: Number(match[2])
+    day: Number(match[2]),
+    profileId: match[3]
   };
 }
 
@@ -67,21 +62,42 @@ function appError(message: string): void {
   window.alert(message);
 }
 
+function splitForExport(value: string, maxLen = 36): string[] {
+  const words = value.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  words.forEach((word) => {
+    if ((`${current} ${word}`).trim().length <= maxLen) {
+      current = `${current} ${word}`.trim();
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
 export default function App() {
   const {
     ingredients,
     meals,
+    profiles,
     pinnedMealIds,
     weekPlans,
     currentWeekStartDate,
     inventorySort,
     shiftWeek,
     setInventorySort,
+    addProfile,
+    updateProfile,
+    deleteProfile,
     addOrMergeIngredient,
     updateIngredient,
     deleteIngredient,
     adjustIngredientCount,
     toggleIngredientPinned,
+    clearInventory,
     addMeal,
     updateMeal,
     toggleMealPinned,
@@ -89,7 +105,6 @@ export default function App() {
     dropIngredientToCell,
     dropMealToCell,
     moveOrSwapCell,
-    assignCell,
     clearCell,
     duplicateCell,
     makeLeftovers,
@@ -111,19 +126,25 @@ export default function App() {
 
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [aiImportModalOpen, setAiImportModalOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+
+  const [newProfileName, setNewProfileName] = useState('');
+  const [newProfileColor, setNewProfileColor] = useState('#14b8a6');
 
   const [contextMenu, setContextMenu] = useState<MenuState>(null);
 
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
-  const [duplicateSource, setDuplicateSource] = useState<CellAddress | null>(null);
+  const [duplicateSource, setDuplicateSource] = useState<SlotAddress | null>(null);
   const [duplicateTargetDay, setDuplicateTargetDay] = useState(0);
   const [duplicateTargetMeal, setDuplicateTargetMeal] = useState<MealType>('dinner');
+  const [duplicateTargetProfile, setDuplicateTargetProfile] = useState('');
 
   const [activeDragLabel, setActiveDragLabel] = useState<string>('');
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const mealById = useMemo(() => new Map(meals.map((meal) => [meal.id, meal])), [meals]);
+  const profileById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
 
   const pinnedMeals = useMemo(
     () => pinnedMealIds.map((id) => mealById.get(id)).filter((meal): meal is Meal => Boolean(meal)),
@@ -152,12 +173,19 @@ export default function App() {
 
   const weekStart = parseISODate(currentWeekStartDate);
 
+  function resolveMealName(entry: PersonCellEntry): string | undefined {
+    if (entry.mealId) {
+      return mealById.get(entry.mealId)?.name ?? entry.adHocMealName;
+    }
+    return entry.adHocMealName;
+  }
+
   function closeContextMenu() {
     setContextMenu(null);
   }
 
-  function openCellContextMenu(mealType: MealType, day: number, x: number, y: number) {
-    setContextMenu({ type: 'cell', x, y, address: { mealType, day } });
+  function openSlotContextMenu(address: SlotAddress, x: number, y: number) {
+    setContextMenu({ type: 'slot', x, y, address });
   }
 
   function openIngredientContextMenu(ingredient: Ingredient, x: number, y: number) {
@@ -168,15 +196,42 @@ export default function App() {
     const exportGrid = Object.fromEntries(
       MEAL_TYPES.map((mealType) => [
         mealType,
-        weekPlan.grid[mealType].map((entry) => {
-          if (!entry) return null;
+        weekPlan.grid[mealType].map((cell) => {
+          if (!cell) return null;
+
+          const mealsForCell = Object.entries(cell)
+            .map(([profileId, personEntry]) => {
+              if (!personEntry) return null;
+              const profileName = profileById.get(profileId)?.name ?? 'Person';
+              const mealName = resolveMealName(personEntry) ?? 'Meal';
+              return `${profileName}: ${mealName}`;
+            })
+            .filter((value): value is string => Boolean(value));
+
+          if (mealsForCell.length === 0) return null;
+
+          const joinedName = splitForExport(mealsForCell.join(' | '), 34).join(' / ');
+          const ingredientsForCell = Object.entries(cell)
+            .flatMap(([profileId, personEntry]) => {
+              if (!personEntry) return [];
+              const profileName = profileById.get(profileId)?.name ?? 'Person';
+              return personEntry.ingredientRefs.map((item) => ({
+                name: `${profileName}: ${item.name}`,
+                qty: item.qty
+              }));
+            });
+
+          const servingTotal = Object.values(cell)
+            .filter((entry): entry is PersonCellEntry => Boolean(entry))
+            .reduce((sum, entry) => sum + (entry.servings || 1), 0);
+
           return {
-            mealName: entry.mealId ? mealById.get(entry.mealId)?.name ?? entry.adHocMealName ?? 'Meal' : entry.adHocMealName,
-            adHocMealName: entry.adHocMealName,
-            ingredients: entry.ingredientRefs.map((item) => ({ name: item.name, qty: item.qty })),
-            assignedTo: entry.assignedTo,
-            servings: entry.servings,
-            isLeftovers: entry.isLeftovers
+            mealName: joinedName,
+            adHocMealName: joinedName,
+            ingredients: ingredientsForCell,
+            assignedTo: 'split',
+            servings: servingTotal,
+            isLeftovers: Object.values(cell).some((entry) => Boolean(entry?.isLeftovers))
           };
         })
       ])
@@ -223,6 +278,7 @@ export default function App() {
     const payload: PlannerExportShape = {
       ingredients,
       meals,
+      profiles,
       pinnedMealIds,
       weekPlans,
       currentWeekStartDate
@@ -256,7 +312,7 @@ export default function App() {
     setActiveDragLabel('');
     if (!event.over) return;
 
-    const overAddress = parseCellId(String(event.over.id));
+    const overAddress = parseSlotId(String(event.over.id));
     if (!overAddress) return;
 
     const dragType = event.active.data.current?.dragType;
@@ -276,39 +332,19 @@ export default function App() {
       return;
     }
 
-    if (dragType === 'cell-content') {
-      const source = event.active.data.current?.source as CellAddress | undefined;
+    if (dragType === 'slot-content') {
+      const source = event.active.data.current?.source as SlotAddress | undefined;
       if (source) {
         moveOrSwapCell(source, overAddress);
       }
     }
   }
 
-  const cellMenuActions = useMemo(() => {
-    if (!contextMenu || contextMenu.type !== 'cell') return [];
+  const slotMenuActions = useMemo(() => {
+    if (!contextMenu || contextMenu.type !== 'slot') return [];
     const { address } = contextMenu;
 
     return [
-      {
-        id: 'assign-both',
-        label: 'Assign to: Both',
-        onClick: () => assignCell(address, 'both')
-      },
-      {
-        id: 'assign-me',
-        label: 'Assign to: Me',
-        onClick: () => assignCell(address, 'me')
-      },
-      {
-        id: 'assign-wife',
-        label: 'Assign to: Wife',
-        onClick: () => assignCell(address, 'wife')
-      },
-      {
-        id: 'leftovers',
-        label: 'Make leftovers (next day lunch)',
-        onClick: () => makeLeftovers(address)
-      },
       {
         id: 'servings',
         label: 'Set servings',
@@ -321,18 +357,24 @@ export default function App() {
         }
       },
       {
+        id: 'leftovers',
+        label: 'Make leftovers (next day lunch)',
+        onClick: () => makeLeftovers(address)
+      },
+      {
         id: 'duplicate',
         label: 'Duplicate to...',
         onClick: () => {
           setDuplicateSource(address);
           setDuplicateTargetDay(address.day);
           setDuplicateTargetMeal(address.mealType);
+          setDuplicateTargetProfile(address.profileId);
           setDuplicateModalOpen(true);
         }
       },
       {
         id: 'save-meal',
-        label: 'Save cell as Meal',
+        label: 'Save slot as Meal',
         onClick: () => {
           const name = window.prompt('Meal name');
           if (!name) return;
@@ -341,12 +383,12 @@ export default function App() {
       },
       {
         id: 'clear',
-        label: 'Clear cell',
+        label: 'Clear person slot',
         onClick: () => clearCell(address),
         tone: 'danger' as const
       }
     ];
-  }, [assignCell, clearCell, contextMenu, makeLeftovers, saveCellAsMeal, setCellServings]);
+  }, [clearCell, contextMenu, makeLeftovers, saveCellAsMeal, setCellServings]);
 
   const ingredientMenuActions = useMemo(() => {
     if (!contextMenu || contextMenu.type !== 'ingredient') return [];
@@ -404,7 +446,7 @@ export default function App() {
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="min-h-screen bg-gradient-to-b from-slate-100 via-cyan-50 to-white px-4 py-4 text-slate-800">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4">
+        <div className="mx-auto flex w-full max-w-[1750px] flex-col gap-4">
           <header className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -444,6 +486,13 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100"
+                  onClick={() => setProfileModalOpen(true)}
+                >
+                  Profiles
+                </button>
+                <button
+                  type="button"
                   className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100"
                   onClick={() => {
                     setEditingIngredient(null);
@@ -461,6 +510,17 @@ export default function App() {
                   }}
                 >
                   Add Meal
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                  onClick={() => {
+                    if (window.confirm('Clear all ingredients and counts?')) {
+                      clearInventory();
+                    }
+                  }}
+                >
+                  Clear Inventory
                 </button>
                 <button
                   type="button"
@@ -514,7 +574,7 @@ export default function App() {
           <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Pinned Favorites</h2>
-              <div className="text-xs text-slate-500">Drag a meal card into any calendar cell</div>
+              <div className="text-xs text-slate-500">Drag a meal card into a specific person lane in any calendar cell</div>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
               {pinnedMeals.map((meal) => (
@@ -581,27 +641,20 @@ export default function App() {
 
                 {MEAL_TYPES.map((mealType) => (
                   <div key={`row-${mealType}`} className="contents">
-                    <div
-                      key={`${mealType}-label`}
-                      className="flex items-center rounded-lg bg-slate-50 px-2 text-sm font-semibold text-slate-600"
-                    >
+                    <div className="flex items-center rounded-lg bg-slate-50 px-2 text-sm font-semibold text-slate-600">
                       {MEAL_LABELS[mealType]}
                     </div>
-                    {Array.from({ length: 7 }).map((_, day) => {
-                      const entry = weekPlan.grid[mealType][day];
-                      const mealName = entry?.mealId ? mealById.get(entry.mealId)?.name : entry?.adHocMealName;
-
-                      return (
-                        <CalendarCell
-                          key={`${mealType}-${day}`}
-                          mealType={mealType}
-                          day={day}
-                          entry={entry}
-                          mealName={mealName}
-                          onContextMenu={openCellContextMenu}
-                        />
-                      );
-                    })}
+                    {Array.from({ length: 7 }).map((_, day) => (
+                      <CalendarCell
+                        key={`${mealType}-${day}`}
+                        mealType={mealType}
+                        day={day}
+                        profiles={profiles}
+                        entry={weekPlan.grid[mealType][day]}
+                        resolveMealName={resolveMealName}
+                        onSlotContextMenu={openSlotContextMenu}
+                      />
+                    ))}
                   </div>
                 ))}
               </div>
@@ -610,11 +663,11 @@ export default function App() {
         </div>
 
         <ContextMenu
-          open={Boolean(contextMenu && contextMenu.type === 'cell')}
+          open={Boolean(contextMenu && contextMenu.type === 'slot')}
           x={contextMenu?.x ?? 0}
           y={contextMenu?.y ?? 0}
-          title="Cell actions"
-          actions={cellMenuActions}
+          title="Person slot actions"
+          actions={slotMenuActions}
           onClose={closeContextMenu}
         />
 
@@ -660,8 +713,72 @@ export default function App() {
         <ReceiptScannerModal open={receiptModalOpen} onClose={() => setReceiptModalOpen(false)} onImportItems={mergeReceiptItems} />
         <AiImportModal open={aiImportModalOpen} onClose={() => setAiImportModalOpen(false)} onImportItems={mergeReceiptItems} />
 
-        <Modal open={duplicateModalOpen} onClose={() => setDuplicateModalOpen(false)} title="Duplicate Cell To">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Modal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} title="Profiles" widthClassName="max-w-3xl">
+          <div className="space-y-3">
+            {profiles.map((profile) => (
+              <div key={profile.id} className="grid grid-cols-12 items-center gap-2 rounded-md border border-slate-200 p-2">
+                <input
+                  value={profile.name}
+                  onChange={(event) => updateProfile(profile.id, { name: event.target.value })}
+                  className="col-span-7 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                />
+                <input
+                  type="color"
+                  value={profile.color}
+                  onChange={(event) => updateProfile(profile.id, { color: event.target.value })}
+                  className="col-span-2 h-9 w-full rounded-md border border-slate-300"
+                />
+                <div className="col-span-2 text-xs" style={{ color: profile.color }}>
+                  {profile.color}
+                </div>
+                <button
+                  type="button"
+                  disabled={profiles.length <= 1}
+                  onClick={() => {
+                    if (window.confirm(`Delete profile ${profile.name}?`)) {
+                      deleteProfile(profile.id);
+                    }
+                  }}
+                  className="col-span-1 rounded-md border border-red-300 px-2 py-1.5 text-xs text-red-700 disabled:opacity-40"
+                >
+                  Del
+                </button>
+              </div>
+            ))}
+
+            <div className="rounded-md border border-dashed border-slate-300 p-3">
+              <div className="mb-2 text-sm font-semibold text-slate-700">Add profile</div>
+              <div className="grid grid-cols-12 gap-2">
+                <input
+                  value={newProfileName}
+                  onChange={(event) => setNewProfileName(event.target.value)}
+                  placeholder="Name"
+                  className="col-span-8 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                />
+                <input
+                  type="color"
+                  value={newProfileColor}
+                  onChange={(event) => setNewProfileColor(event.target.value)}
+                  className="col-span-2 h-9 w-full rounded-md border border-slate-300"
+                />
+                <button
+                  type="button"
+                  className="col-span-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white"
+                  onClick={() => {
+                    if (!newProfileName.trim()) return;
+                    addProfile({ name: newProfileName, color: newProfileColor });
+                    setNewProfileName('');
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+
+        <Modal open={duplicateModalOpen} onClose={() => setDuplicateModalOpen(false)} title="Duplicate Slot To">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700">Target Day</span>
               <select
@@ -691,6 +808,21 @@ export default function App() {
                 ))}
               </select>
             </label>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">Target Person</span>
+              <select
+                value={duplicateTargetProfile}
+                onChange={(event) => setDuplicateTargetProfile(event.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2"
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="mt-4 flex justify-end gap-2">
@@ -705,8 +837,12 @@ export default function App() {
               type="button"
               className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
               onClick={() => {
-                if (!duplicateSource) return;
-                duplicateCell(duplicateSource, { mealType: duplicateTargetMeal, day: duplicateTargetDay });
+                if (!duplicateSource || !duplicateTargetProfile) return;
+                duplicateCell(duplicateSource, {
+                  mealType: duplicateTargetMeal,
+                  day: duplicateTargetDay,
+                  profileId: duplicateTargetProfile
+                });
                 setDuplicateModalOpen(false);
               }}
             >
