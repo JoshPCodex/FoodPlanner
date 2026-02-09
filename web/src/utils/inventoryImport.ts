@@ -95,6 +95,29 @@ function isLikelyNonItemName(name: string): boolean {
   return false;
 }
 
+/**
+ * Accept common LLM outputs like:
+ * ```text
+ * egg x12
+ * banana x5
+ * ```
+ * and return only the inner lines.
+ *
+ * If the user pastes multiple fenced blocks, we keep it simple and just strip
+ * the first opening fence and the last closing fence.
+ */
+function stripCodeFences(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return input;
+
+  // Remove a leading ```lang (or ```) line
+  const withoutOpening = trimmed.replace(/^```[^\n]*\n/, '');
+  // Remove a trailing ``` line
+  const withoutClosing = withoutOpening.replace(/\n```$/, '');
+
+  return withoutClosing;
+}
+
 function parseLine(rawLine: string): ParsedLine {
   const original = rawLine.trim();
   if (!original) return null;
@@ -163,10 +186,12 @@ function parseLine(rawLine: string): ParsedLine {
 }
 
 export function parseInventoryImportText(text: string): ReceiptDraftItem[] {
+  const cleanedText = stripCodeFences(text);
+
   const merged = new Map<string, ReceiptDraftItem>();
   let pending: { key: string; lastAddedCount: number } | null = null;
 
-  text
+  cleanedText
     .split(/\r?\n/)
     .map((line) => parseLine(line))
     .forEach((parsed) => {
@@ -214,8 +239,19 @@ export function parseInventoryImportText(text: string): ReceiptDraftItem[] {
   return Array.from(merged.values());
 }
 
-export const AI_INVENTORY_PROMPT = `Return ONLY plain text, one item per line, using this exact format:
+export const AI_INVENTORY_PROMPT = `You are helping me build a simple home food inventory from photos (receipt, fridge, pantry, groceries) OR raw pasted receipt text (like Instacart order details).
+
+Return ONLY a single fenced code block (so I can click “Copy code”) containing one item per line in this exact format:
 ingredient name xN
+
+Output format requirements:
+- Put ALL lines inside ONE code block like this:
+
+\`\`\`text
+egg x12
+banana x5
+milk x1
+\`\`\`
 
 Rules:
 1) Use simple generic names only (no brands, no marketing words, no package size text).
@@ -223,7 +259,7 @@ Rules:
 3) Merge duplicates and sum counts.
 4) If quantity is unclear, use x1.
 5) Keep names short and consistent (examples: "cheddar cheese", "chicken breast", "banana", "egg", "milk").
-6) Do not include prices, totals, SKU codes, loyalty savings, section headers, or extra commentary.
+6) Do not include prices, totals, SKU codes, loyalty savings, section headers, or extra commentary — ONLY the code block.
 7) Quantity parsing rules:
    - The input may be raw pasted text, not just photos/OCR.
    - Lines with "2 x $X" mean quantity 2.
