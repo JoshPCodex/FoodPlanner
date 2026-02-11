@@ -21,12 +21,12 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
   return (
     <Modal open={open} onClose={onClose} title="AI Inventory Helper" widthClassName="max-w-5xl">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+        <div className="glass-panel space-y-3 rounded-xl p-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-700">1) Copy this prompt into ChatGPT</h3>
             <button
               type="button"
-              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+              className="btn-glass btn-sm"
               onClick={async () => {
                 try {
                   await navigator.clipboard.writeText(AI_INVENTORY_PROMPT);
@@ -42,7 +42,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
           <textarea
             value={AI_INVENTORY_PROMPT}
             readOnly
-            className="h-80 w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 font-mono text-xs"
+            className="frost-input h-80 w-full bg-white/70 px-3 py-2 font-mono text-xs"
           />
 
           <p className="text-xs text-slate-600">
@@ -50,20 +50,20 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
           </p>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+        <div className="glass-panel space-y-3 rounded-xl p-3">
           <h3 className="text-sm font-semibold text-slate-700">2) Paste AI output or pasted receipt text and import</h3>
 
           <textarea
             value={inputText}
             onChange={(event) => setInputText(event.target.value)}
             placeholder={'egg x12\nbanana x5\nchicken breast x4\nmilk'}
-            className="h-44 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm"
+            className="frost-input h-44 w-full px-3 py-2 font-mono text-sm"
           />
 
           <div className="flex gap-2">
             <button
               type="button"
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="btn-glass btn-md"
               onClick={() => {
                 const parsed = parseInventoryImportText(inputText);
                 setItems(parsed);
@@ -73,7 +73,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
             </button>
             <button
               type="button"
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="btn-glass btn-md"
               onClick={() => {
                 setInputText('');
                 setItems([]);
@@ -83,7 +83,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
             </button>
           </div>
 
-          <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600">
+          <div className="glass-panel rounded-lg p-2 text-xs text-slate-600">
             Parsed items: {items.length} | Total quantity units: {parsedCount}
           </div>
 
@@ -97,7 +97,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
                       current.map((line) => (line.id === item.id ? { ...line, name: event.target.value } : line))
                     )
                   }
-                  className="col-span-6 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="frost-input col-span-6 px-2 py-1.5 text-sm"
                 />
 
                 <input
@@ -111,7 +111,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
                       )
                     )
                   }
-                  className="col-span-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="frost-input col-span-2 px-2 py-1.5 text-sm"
                 />
 
                 <select
@@ -123,7 +123,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
                       )
                     )
                   }
-                  className="col-span-3 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="frost-input col-span-3 px-2 py-1.5 text-sm"
                 >
                   {CATEGORIES.map((category) => (
                     <option key={category} value={category}>
@@ -134,7 +134,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
 
                 <button
                   type="button"
-                  className="col-span-1 rounded-md border border-red-200 text-sm text-red-600"
+                  className="btn-glass btn-sm btn-danger col-span-1"
                   onClick={() => setItems((current) => current.filter((line) => line.id !== item.id))}
                 >
                   x
@@ -144,13 +144,13 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
           </div>
 
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+            <button type="button" onClick={onClose} className="btn-glass btn-md">
               Cancel
             </button>
             <button
               type="button"
               disabled={!hasItems}
-              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="btn-glass btn-md btn-primary disabled:opacity-40"
               onClick={() => {
                 const cleaned = items.map((item) => ({ ...item, name: item.name.trim() })).filter((item) => item.name.length > 0);
                 if (cleaned.length === 0) return;

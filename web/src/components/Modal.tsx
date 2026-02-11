@@ -11,22 +11,22 @@ export function Modal({ title, open, onClose, children, widthClassName = 'max-w-
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3 backdrop-blur-sm" onClick={onClose}>
       <div
-        className={`w-full ${widthClassName} max-h-[92vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-2xl`}
+        className={`glass-panel-strong w-full ${widthClassName} max-h-[92vh] overflow-y-auto rounded-2xl p-5`}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-2">
+        <div className="relative z-10 mb-4 flex items-center justify-between border-b border-white/45 pb-2.5">
           <h2 className="text-xl font-semibold text-slate-800">{title}</h2>
           <button
             type="button"
-            className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-100"
+            className="btn-glass btn-sm"
             onClick={onClose}
           >
             Close
           </button>
         </div>
-        {children}
+        <div className="relative z-10">{children}</div>
       </div>
     </div>
   );

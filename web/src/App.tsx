@@ -557,24 +557,24 @@ export default function App() {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="min-h-screen bg-gradient-to-b from-slate-100 via-cyan-50 to-white px-4 py-4 text-slate-800">
-        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4">
-          <header className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="app-shell min-h-screen px-4 py-4 text-slate-800">
+        <div className="shell-content mx-auto flex w-full max-w-[1800px] flex-col gap-4">
+          <header className="glass-panel-strong rounded-2xl p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100"
+                  className="btn-glass btn-sm"
                   onClick={() => shiftWeek(-1)}
                 >
                   Prev
                 </button>
-                <div className="rounded-md border border-cyan-200 bg-cyan-50 px-4 py-1.5 text-lg font-semibold text-cyan-900">
+                <div className="glass-panel rounded-full px-4 py-1.5 text-lg font-semibold text-cyan-900">
                   Week of {formatWeekLabel(currentWeekStartDate)}
                 </div>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100"
+                  className="btn-glass btn-sm"
                   onClick={() => shiftWeek(1)}
                 >
                   Next
@@ -584,28 +584,28 @@ export default function App() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                  className="btn-glass btn-md btn-primary"
                   onClick={() => setReceiptModalOpen(true)}
                 >
                   Scan Receipt
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100"
+                  className="btn-glass btn-md"
                   onClick={() => setAiImportModalOpen(true)}
                 >
                   AI Import Helper
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100"
+                  className="btn-glass btn-md"
                   onClick={() => setProfileModalOpen(true)}
                 >
                   Profiles
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100"
+                  className="btn-glass btn-md"
                   onClick={() => {
                     setEditingIngredient(null);
                     setIngredientModalOpen(true);
@@ -615,7 +615,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100"
+                  className="btn-glass btn-md"
                   onClick={() => {
                     setEditingMeal(null);
                     setMealModalOpen(true);
@@ -625,7 +625,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                  className="btn-glass btn-md btn-danger"
                   onClick={() => {
                     if (window.confirm('Clear all ingredients and counts?')) {
                       clearInventory();
@@ -636,28 +636,28 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+                  className="btn-glass btn-md btn-accent"
                   onClick={handleExportImage}
                 >
                   Export to Image
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100"
+                  className="btn-glass btn-md"
                   onClick={handleExportJson}
                 >
                   Export JSON
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100"
+                  className="btn-glass btn-md"
                   onClick={() => importFileRef.current?.click()}
                 >
                   Import JSON
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 hover:bg-amber-100"
+                  className="btn-glass btn-md btn-warning"
                   onClick={() => {
                     if (window.confirm('Reset to demo data? This removes your current plan and inventory.')) {
                       resetDemoData();
@@ -683,9 +683,9 @@ export default function App() {
             </div>
           </header>
 
-          <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <section className="glass-panel rounded-2xl p-3">
             <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Pinned Favorites</h2>
+              <h2 className="section-title">Pinned Favorites</h2>
               <div className="text-xs text-slate-500">Drag into a cell and use the hover assignment overlay to pick Family or person</div>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-1">
@@ -706,13 +706,13 @@ export default function App() {
           </section>
 
           <main className="grid grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
-            <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <section className="glass-panel rounded-2xl p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Ingredient Bubbles</h2>
+                <h2 className="section-title">Ingredient Bubbles</h2>
                 <select
                   value={inventorySort}
                   onChange={(event) => setInventorySort(event.target.value as 'category' | 'expiry')}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                  className="frost-input px-2 py-1 text-xs"
                 >
                   <option value="category">Sort: Category</option>
                   <option value="expiry">Sort: Soonest to expire</option>
@@ -741,11 +741,11 @@ export default function App() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="grid grid-cols-8 gap-2">
-                <div className="rounded-lg bg-slate-100 p-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Meals</div>
+            <section className="glass-panel rounded-2xl p-3">
+              <div className="calendar-grid grid grid-cols-8 gap-2 rounded-2xl p-2">
+                <div className="glass-panel rounded-lg p-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Meals</div>
                 {DAY_NAMES.map((name, day) => (
-                  <div key={name} className="rounded-lg bg-cyan-50 p-2 text-center">
+                  <div key={name} className="glass-panel rounded-lg p-2 text-center">
                     <div className="text-sm font-semibold text-cyan-800">{name}</div>
                     <div className="text-xs text-cyan-700">{formatDisplayDate(addDays(weekStart, day).toISOString().slice(0, 10))}</div>
                     <div className="mt-1 space-y-1">
@@ -757,7 +757,7 @@ export default function App() {
                           (profile.dailyProteinGoalG !== undefined || profile.dailyCarbsGoalG !== undefined || profile.dailyFatGoalG !== undefined);
 
                         return (
-                          <div key={`day-${day}-profile-${profile.id}`} className="rounded border border-slate-200 bg-white/80 px-1 py-1 text-left">
+                          <div key={`day-${day}-profile-${profile.id}`} className="glass-panel rounded-lg px-1 py-1 text-left">
                             <div className="flex items-center justify-between gap-1">
                               <span className="truncate text-[10px] font-semibold" style={{ color: profile.color }}>
                                 {profile.name}
@@ -792,7 +792,7 @@ export default function App() {
 
                 {MEAL_TYPES.map((mealType) => (
                   <div key={`row-${mealType}`} className="contents">
-                    <div className="flex items-center rounded-lg bg-slate-50 px-2 text-sm font-semibold text-slate-600">
+                    <div className="glass-panel flex items-center rounded-lg px-2 text-sm font-semibold text-slate-600">
                       {MEAL_LABELS[mealType]}
                     </div>
                     {Array.from({ length: 7 }).map((_, day) => (
@@ -868,18 +868,18 @@ export default function App() {
         <Modal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} title="Profiles" widthClassName="max-w-4xl">
           <div className="space-y-3">
             {profiles.map((profile) => (
-              <div key={profile.id} className="space-y-2 rounded-md border border-slate-200 p-3">
+              <div key={profile.id} className="glass-panel space-y-2 rounded-xl p-3">
                 <div className="grid grid-cols-12 items-center gap-2">
                   <input
                     value={profile.name}
                     onChange={(event) => updateProfile(profile.id, { name: event.target.value })}
-                    className="col-span-6 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    className="frost-input col-span-6 px-2 py-1.5 text-sm"
                   />
                   <input
                     type="color"
                     value={profile.color}
                     onChange={(event) => updateProfile(profile.id, { color: event.target.value })}
-                    className="col-span-2 h-9 w-full rounded-md border border-slate-300"
+                    className="frost-input col-span-2 h-9 w-full"
                   />
                   <label className="col-span-3 flex items-center gap-2 text-xs text-slate-700">
                     <input
@@ -905,7 +905,7 @@ export default function App() {
                         deleteProfile(profile.id);
                       }
                     }}
-                    className="col-span-1 rounded-md border border-red-300 px-2 py-1.5 text-xs text-red-700 disabled:opacity-40"
+                    className="btn-glass btn-sm btn-danger col-span-1 disabled:opacity-40"
                   >
                     Del
                   </button>
@@ -924,7 +924,7 @@ export default function App() {
                             dailyCalorieGoal: Math.max(1, Number(event.target.value) || 0)
                           })
                         }
-                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                        className="frost-input w-full px-2 py-1.5 text-sm"
                       />
                     </label>
                     <label className="block">
@@ -938,7 +938,7 @@ export default function App() {
                             dailyProteinGoalG: optionalNumber(event.target.value)
                           })
                         }
-                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                        className="frost-input w-full px-2 py-1.5 text-sm"
                       />
                     </label>
                     <label className="block">
@@ -952,7 +952,7 @@ export default function App() {
                             dailyCarbsGoalG: optionalNumber(event.target.value)
                           })
                         }
-                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                        className="frost-input w-full px-2 py-1.5 text-sm"
                       />
                     </label>
                     <label className="block">
@@ -966,7 +966,7 @@ export default function App() {
                             dailyFatGoalG: optionalNumber(event.target.value)
                           })
                         }
-                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                        className="frost-input w-full px-2 py-1.5 text-sm"
                       />
                     </label>
                   </div>
@@ -974,24 +974,24 @@ export default function App() {
               </div>
             ))}
 
-            <div className="rounded-md border border-dashed border-slate-300 p-3">
+            <div className="glass-panel rounded-xl p-3">
               <div className="mb-2 text-sm font-semibold text-slate-700">Add profile</div>
               <div className="grid grid-cols-12 gap-2">
                 <input
                   value={newProfileName}
                   onChange={(event) => setNewProfileName(event.target.value)}
                   placeholder="Name"
-                  className="col-span-8 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="frost-input col-span-8 px-2 py-1.5 text-sm"
                 />
                 <input
                   type="color"
                   value={newProfileColor}
                   onChange={(event) => setNewProfileColor(event.target.value)}
-                  className="col-span-2 h-9 w-full rounded-md border border-slate-300"
+                  className="frost-input col-span-2 h-9 w-full"
                 />
                 <button
                   type="button"
-                  className="col-span-2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white"
+                  className="btn-glass btn-sm btn-primary col-span-2"
                   onClick={() => {
                     if (!newProfileName.trim()) return;
                     addProfile({ name: newProfileName, color: newProfileColor });
@@ -1012,7 +1012,7 @@ export default function App() {
               <select
                 value={duplicateTargetDay}
                 onChange={(event) => setDuplicateTargetDay(Number(event.target.value))}
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="frost-input w-full px-3 py-2"
               >
                 {DAY_NAMES.map((name, day) => (
                   <option key={name} value={day}>
@@ -1027,7 +1027,7 @@ export default function App() {
               <select
                 value={duplicateTargetMeal}
                 onChange={(event) => setDuplicateTargetMeal(event.target.value as MealType)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="frost-input w-full px-3 py-2"
               >
                 {MEAL_TYPES.map((mealType) => (
                   <option key={mealType} value={mealType}>
@@ -1042,7 +1042,7 @@ export default function App() {
               <select
                 value={duplicateTargetType}
                 onChange={(event) => setDuplicateTargetType(event.target.value as 'family' | 'profile')}
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
+                className="frost-input w-full px-3 py-2"
               >
                 <option value="family">Family</option>
                 <option value="profile">Person</option>
@@ -1055,7 +1055,7 @@ export default function App() {
                 value={duplicateTargetProfile}
                 disabled={duplicateTargetType !== 'profile'}
                 onChange={(event) => setDuplicateTargetProfile(event.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:opacity-40"
+                className="frost-input w-full px-3 py-2 disabled:opacity-40"
               >
                 {profiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
@@ -1070,13 +1070,13 @@ export default function App() {
             <button
               type="button"
               onClick={() => setDuplicateModalOpen(false)}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="btn-glass btn-md"
             >
               Cancel
             </button>
             <button
               type="button"
-              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+              className="btn-glass btn-md btn-primary"
               onClick={() => {
                 if (!duplicateSource) return;
                 duplicateCell(duplicateSource, {
@@ -1096,7 +1096,7 @@ export default function App() {
 
       <DragOverlay>
         {activeDragLabel ? (
-          <div className="rounded-md border border-slate-300 bg-white/95 px-3 py-1 text-sm font-semibold shadow-lg">{activeDragLabel}</div>
+          <div className="drag-overlay-badge rounded-full px-3 py-1 text-sm font-semibold">{activeDragLabel}</div>
         ) : null}
       </DragOverlay>
     </DndContext>

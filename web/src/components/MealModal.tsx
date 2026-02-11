@@ -68,7 +68,7 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
         <label className="block">
           <span className="mb-1 block text-sm font-semibold text-slate-700">Meal Name</span>
           <input
-            className="w-full rounded-md border border-slate-300 px-3 py-2"
+            className="frost-input w-full px-3 py-2"
             value={name}
             onChange={(event) => setName(event.target.value)}
             required
@@ -82,7 +82,7 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
             <input
               type="number"
               min={1}
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+              className="frost-input w-full px-3 py-2"
               value={servingsDefault}
               onChange={(event) => setServingsDefault(Number(event.target.value))}
             />
@@ -94,13 +94,13 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
           </label>
         </div>
 
-        <div className="rounded-lg border border-slate-200 p-3">
+        <div className="glass-panel rounded-xl p-3">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-700">Ingredients</h3>
             <button
               type="button"
               onClick={() => setIngredients((current) => [...current, emptyIngredient()])}
-              className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+              className="btn-glass btn-sm"
             >
               + Add Line
             </button>
@@ -110,7 +110,7 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
             {ingredients.map((item, index) => (
               <div key={`meal-ingredient-${index}`} className="grid grid-cols-12 gap-2">
                 <input
-                  className="col-span-6 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="frost-input col-span-6 px-2 py-1.5 text-sm"
                   placeholder="Ingredient"
                   value={item.name}
                   onChange={(event) =>
@@ -122,7 +122,7 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
                 <input
                   type="number"
                   min={1}
-                  className="col-span-2 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="frost-input col-span-2 px-2 py-1.5 text-sm"
                   value={item.qty ?? 1}
                   onChange={(event) =>
                     setIngredients((current) =>
@@ -133,7 +133,7 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
                   }
                 />
                 <select
-                  className="col-span-3 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="frost-input col-span-3 px-2 py-1.5 text-sm"
                   value={item.category ?? 'Other'}
                   onChange={(event) =>
                     setIngredients((current) =>
@@ -151,7 +151,7 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
                 </select>
                 <button
                   type="button"
-                  className="col-span-1 rounded-md border border-red-200 text-sm text-red-600"
+                  className="btn-glass btn-sm btn-danger col-span-1"
                   onClick={() =>
                     setIngredients((current) => (current.length <= 1 ? current : current.filter((_, rowIndex) => rowIndex !== index)))
                   }
@@ -164,10 +164,10 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
         </div>
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-2 text-sm">
+          <button type="button" onClick={onClose} className="btn-glass btn-md">
             Cancel
           </button>
-          <button type="submit" className="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white">
+          <button type="submit" className="btn-glass btn-md btn-primary">
             Save Meal
           </button>
         </div>
