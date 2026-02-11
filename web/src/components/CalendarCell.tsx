@@ -106,46 +106,59 @@ interface DropTargetProps {
   className: string;
   label: string;
   active: boolean;
+  occupied?: boolean;
+  occupiedHint?: string;
+  mode: 'assign' | 'move';
   tint?: string;
 }
 
-function DropTarget({ id, className, label, active, tint }: DropTargetProps) {
+function DropTarget({ id, className, label, active, tint, occupied = false, occupiedHint, mode }: DropTargetProps) {
   const { setNodeRef, isOver } = useDroppable({ id });
+  const statusText = mode === 'move' ? (occupied ? 'Swap' : 'Move') : occupied ? 'Add to occupied' : 'Assign';
 
   return (
     <div
       ref={setNodeRef}
       className={clsx(
         className,
-        'rounded-lg border border-dashed p-1 text-[10px] font-semibold text-center transition',
+        'rounded-lg border p-1 text-[10px] font-semibold text-center transition',
         active ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
-        isOver ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-slate-300 bg-white/80 text-slate-500'
+        occupied ? 'border-solid' : 'border-dashed',
+        isOver ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : occupied ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-slate-300 bg-white/80 text-slate-500'
       )}
       style={
         tint
           ? {
-              backgroundColor: isOver ? '#dcfce7' : hexToRgba(tint, 0.16),
-              borderColor: isOver ? '#34d399' : hexToRgba(tint, 0.5),
-              color: isOver ? '#065f46' : tint
-            }
+            backgroundColor: isOver ? '#dcfce7' : hexToRgba(tint, 0.16),
+            borderColor: isOver ? '#34d399' : occupied ? hexToRgba(tint, 0.8) : hexToRgba(tint, 0.5),
+            color: isOver ? '#065f46' : tint
+          }
           : undefined
       }
     >
-      {label}
+      <div>{label}</div>
+      <div className="mt-0.5 text-[9px] font-medium opacity-90">{statusText}</div>
+      {occupiedHint ? <div className="mt-0.5 truncate text-[9px] opacity-85">{occupiedHint}</div> : null}
     </div>
   );
 }
 
 export function CalendarCell({ mealType, day, profiles, entry, activeDragType, resolveMealName, onSlotContextMenu }: CalendarCellProps) {
   const familySlot = entry?.family ?? null;
-  const personalSlots = profiles
-    .map((profile) => ({ profile, slot: entry?.profiles?.[profile.id] ?? null }))
-    .filter((item) => Boolean(item.slot)) as Array<{ profile: Profile; slot: SlotEntry }>;
+  const profileSlots = profiles.map((profile) => ({ profile, slot: entry?.profiles?.[profile.id] ?? null }));
+  const personalSlots = profileSlots.filter((item) => Boolean(item.slot)) as Array<{ profile: Profile; slot: SlotEntry }>;
   const showAssignmentOverlay = activeDragType === 'ingredient' || activeDragType === 'meal';
   const showMoveOverlay = activeDragType === 'slot-content';
+  const occupiedCount = (familySlot ? 1 : 0) + personalSlots.length;
+  const overlayMode: 'assign' | 'move' = showMoveOverlay ? 'move' : 'assign';
 
   return (
-    <div className="glass-panel group relative min-h-32 rounded-xl border p-1.5">
+    <div className="glass-panel group relative min-h-32 rounded-xl border p-1.5 hover:shadow-xl">
+      {occupiedCount > 0 ? (
+        <div className="absolute right-1.5 top-1.5 z-20 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
+          {occupiedCount} planned
+        </div>
+      ) : null}
       <div className="space-y-1">
         {familySlot ? (
           <SlotCard
@@ -186,16 +199,22 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
               className="h-full"
               label="Family"
               active={showAssignmentOverlay || showMoveOverlay}
+              occupied={Boolean(familySlot)}
+              occupiedHint={familySlot ? resolveMealName(familySlot) ?? 'Meal' : undefined}
+              mode={overlayMode}
             />
 
             <div className="grid h-full gap-1" style={{ gridTemplateRows: `repeat(${Math.max(1, profiles.length)}, minmax(0, 1fr))` }}>
-              {profiles.map((profile) => (
+              {profileSlots.map(({ profile, slot }) => (
                 <DropTarget
                   key={`drop-${mealType}-${day}-${profile.id}`}
                   id={`slot-${mealType}-${day}-profile-${profile.id}`}
                   className="h-full"
                   label={profile.name}
                   active={showAssignmentOverlay || showMoveOverlay}
+                  occupied={Boolean(slot)}
+                  occupiedHint={slot ? resolveMealName(slot) ?? 'Meal' : undefined}
+                  mode={overlayMode}
                   tint={profile.color}
                 />
               ))}

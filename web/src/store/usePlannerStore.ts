@@ -59,6 +59,7 @@ interface PlannerState {
   adjustIngredientCount: (id: string, delta: number) => void;
   toggleIngredientPinned: (id: string) => void;
   clearInventory: () => void;
+  clearCurrentWeekAndRestoreInventory: () => void;
 
   addMeal: (input: Omit<Meal, 'id' | 'createdAt'> & { id?: string }) => void;
   updateMeal: (id: string, updates: Partial<Omit<Meal, 'id' | 'createdAt'>>) => void;
@@ -222,18 +223,46 @@ function baseProfiles(): Profile[] {
 function baseIngredients(): Ingredient[] {
   const now = new Date().toISOString();
   return [
-    ['chicken', 'Protein', 4],
-    ['pork', 'Protein', 3],
-    ['steak', 'Protein', 2],
-    ['cheese', 'Dairy', 5],
-    ['milk', 'Dairy', 2],
-    ['eggs', 'Dairy', 12],
-    ['lettuce', 'Produce', 2],
-    ['carrots', 'Produce', 6],
-    ['cucumber', 'Produce', 3],
-    ['bread', 'Pantry', 2],
-    ['penne', 'Pantry', 2],
-    ['spaghetti', 'Pantry', 2]
+    ['chicken breast', 'Protein', 16],
+    ['ground beef', 'Protein', 8],
+    ['salmon', 'Protein', 6],
+    ['pork loin', 'Protein', 6],
+    ['turkey slices', 'Protein', 10],
+    ['bacon', 'Protein', 8],
+    ['sausage', 'Protein', 6],
+    ['eggs', 'Dairy', 24],
+    ['greek yogurt', 'Dairy', 8],
+    ['cheddar cheese', 'Dairy', 10],
+    ['mozzarella', 'Dairy', 8],
+    ['milk', 'Dairy', 4],
+    ['butter', 'Dairy', 6],
+    ['lettuce', 'Produce', 8],
+    ['spinach', 'Produce', 8],
+    ['broccoli', 'Produce', 8],
+    ['bell pepper', 'Produce', 10],
+    ['carrots', 'Produce', 12],
+    ['cucumber', 'Produce', 8],
+    ['tomato', 'Produce', 12],
+    ['onion', 'Produce', 10],
+    ['banana', 'Produce', 12],
+    ['apple', 'Produce', 10],
+    ['blueberries', 'Produce', 7],
+    ['bread', 'Pantry', 12],
+    ['bagel', 'Pantry', 10],
+    ['oats', 'Pantry', 10],
+    ['granola', 'Pantry', 8],
+    ['rice', 'Pantry', 12],
+    ['quinoa', 'Pantry', 8],
+    ['tortilla', 'Pantry', 12],
+    ['penne', 'Pantry', 8],
+    ['spaghetti', 'Pantry', 8],
+    ['pasta sauce', 'Pantry', 8],
+    ['black beans', 'Pantry', 8],
+    ['peanut butter', 'Pantry', 5],
+    ['hummus', 'Other', 6],
+    ['protein bar', 'Other', 14],
+    ['almonds', 'Other', 7],
+    ['dark chocolate', 'Other', 7]
   ].map(([name, category, count]) => ({
     id: createId('ingredient'),
     name: String(name),
@@ -252,7 +281,7 @@ function baseMeals(): Meal[] {
       pinned: true,
       servingsDefault: 2,
       ingredients: [
-        { name: 'chicken', category: 'Protein', qty: 1 },
+        { name: 'chicken breast', category: 'Protein', qty: 1 },
         { name: 'penne', category: 'Pantry', qty: 1 }
       ],
       createdAt: now
@@ -264,7 +293,8 @@ function baseMeals(): Meal[] {
       servingsDefault: 2,
       ingredients: [
         { name: 'spaghetti', category: 'Pantry', qty: 1 },
-        { name: 'meatballs', category: 'Protein', qty: 1 }
+        { name: 'ground beef', category: 'Protein', qty: 1 },
+        { name: 'pasta sauce', category: 'Pantry', qty: 1 }
       ],
       createdAt: now
     },
@@ -276,11 +306,264 @@ function baseMeals(): Meal[] {
       ingredients: [
         { name: 'bacon', category: 'Protein', qty: 1 },
         { name: 'eggs', category: 'Dairy', qty: 1 },
-        { name: 'cheese', category: 'Dairy', qty: 1 }
+        { name: 'cheddar cheese', category: 'Dairy', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Salmon + Rice Bowl',
+      pinned: true,
+      servingsDefault: 2,
+      ingredients: [
+        { name: 'salmon', category: 'Protein', qty: 1 },
+        { name: 'rice', category: 'Pantry', qty: 1 },
+        { name: 'broccoli', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Turkey Sandwich + Veggies',
+      pinned: false,
+      servingsDefault: 2,
+      ingredients: [
+        { name: 'turkey slices', category: 'Protein', qty: 1 },
+        { name: 'bread', category: 'Pantry', qty: 2 },
+        { name: 'lettuce', category: 'Produce', qty: 1 },
+        { name: 'tomato', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Chicken Taco Night',
+      pinned: false,
+      servingsDefault: 2,
+      ingredients: [
+        { name: 'chicken breast', category: 'Protein', qty: 1 },
+        { name: 'tortilla', category: 'Pantry', qty: 2 },
+        { name: 'cheddar cheese', category: 'Dairy', qty: 1 },
+        { name: 'bell pepper', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Yogurt + Granola Bowl',
+      pinned: false,
+      servingsDefault: 2,
+      ingredients: [
+        { name: 'greek yogurt', category: 'Dairy', qty: 1 },
+        { name: 'granola', category: 'Pantry', qty: 1 },
+        { name: 'blueberries', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Overnight Oats',
+      pinned: false,
+      servingsDefault: 2,
+      ingredients: [
+        { name: 'oats', category: 'Pantry', qty: 1 },
+        { name: 'milk', category: 'Dairy', qty: 1 },
+        { name: 'banana', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Steak + Quinoa',
+      pinned: false,
+      servingsDefault: 2,
+      ingredients: [
+        { name: 'pork loin', category: 'Protein', qty: 1 },
+        { name: 'quinoa', category: 'Pantry', qty: 1 },
+        { name: 'spinach', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Snack Plate',
+      pinned: false,
+      servingsDefault: 2,
+      ingredients: [
+        { name: 'hummus', category: 'Other', qty: 1 },
+        { name: 'carrots', category: 'Produce', qty: 1 },
+        { name: 'cucumber', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Protein Bar + Fruit',
+      pinned: false,
+      servingsDefault: 1,
+      ingredients: [
+        { name: 'protein bar', category: 'Other', qty: 1 },
+        { name: 'apple', category: 'Produce', qty: 1 }
       ],
       createdAt: now
     }
   ];
+}
+
+function slotFromMeal(meal: Meal, ingredients: Ingredient[]): SlotEntry {
+  const normalizedIngredientMap = new Map(ingredients.map((item) => [normalizeName(item.name), item]));
+  return {
+    mealId: meal.id,
+    ingredientRefs: meal.ingredients.map((item) => {
+      const matched = normalizedIngredientMap.get(normalizeName(item.name));
+      return {
+        ingredientId: matched?.id,
+        name: item.name,
+        qty: Math.max(1, item.qty ?? 1)
+      };
+    }),
+    servings: meal.servingsDefault || 2
+  };
+}
+
+function createPlannedDemoWeek(weekStartDate: string, meals: Meal[], ingredients: Ingredient[], profiles: Profile[]): WeekPlan {
+  const plan = createEmptyWeekPlan(weekStartDate);
+  const byName = new Map(meals.map((meal) => [meal.name, meal]));
+  const me = profiles[0];
+  const erica = profiles[1];
+
+  const mealCycle: Record<MealType, string[]> = {
+    breakfast: [
+      'Bacon + Egg + Cheese',
+      'Overnight Oats',
+      'Yogurt + Granola Bowl',
+      'Bacon + Egg + Cheese',
+      'Overnight Oats',
+      'Bacon + Egg + Cheese',
+      'Yogurt + Granola Bowl'
+    ],
+    lunch: [
+      'Turkey Sandwich + Veggies',
+      'Chicken + Penne',
+      'Turkey Sandwich + Veggies',
+      'Salmon + Rice Bowl',
+      'Chicken Taco Night',
+      'Turkey Sandwich + Veggies',
+      'Spaghetti + Meatballs'
+    ],
+    dinner: [
+      'Spaghetti + Meatballs',
+      'Chicken Taco Night',
+      'Salmon + Rice Bowl',
+      'Steak + Quinoa',
+      'Chicken + Penne',
+      'Spaghetti + Meatballs',
+      'Salmon + Rice Bowl'
+    ],
+    snack: [
+      'Snack Plate',
+      'Protein Bar + Fruit',
+      'Snack Plate',
+      'Protein Bar + Fruit',
+      'Snack Plate',
+      'Protein Bar + Fruit',
+      'Snack Plate'
+    ]
+  };
+
+  (Object.keys(mealCycle) as MealType[]).forEach((mealType) => {
+    for (let day = 0; day < 7; day += 1) {
+      const meal = byName.get(mealCycle[mealType][day]);
+      if (!meal) continue;
+      const family = slotFromMeal(meal, ingredients);
+      plan.grid[mealType][day] = { family, profiles: {} };
+    }
+  });
+
+  if (me && erica) {
+    const meBreakfast = byName.get('Yogurt + Granola Bowl');
+    const ericaBreakfast = byName.get('Overnight Oats');
+    const meSnack = byName.get('Protein Bar + Fruit');
+    const ericaSnack = byName.get('Snack Plate');
+
+    if (meBreakfast && ericaBreakfast) {
+      plan.grid.breakfast[1] = {
+        family: null,
+        profiles: {
+          [me.id]: slotFromMeal(meBreakfast, ingredients),
+          [erica.id]: slotFromMeal(ericaBreakfast, ingredients)
+        }
+      };
+      plan.grid.breakfast[4] = {
+        family: null,
+        profiles: {
+          [me.id]: slotFromMeal(ericaBreakfast, ingredients),
+          [erica.id]: slotFromMeal(meBreakfast, ingredients)
+        }
+      };
+    }
+
+    if (meSnack && ericaSnack) {
+      plan.grid.snack[2] = {
+        family: null,
+        profiles: {
+          [me.id]: slotFromMeal(meSnack, ingredients),
+          [erica.id]: slotFromMeal(ericaSnack, ingredients)
+        }
+      };
+    }
+  }
+
+  return plan;
+}
+
+function restoreSlotRefsToInventory(ingredients: Ingredient[], slot: SlotEntry | null): Ingredient[] {
+  if (!slot) return ingredients;
+  let updated = [...ingredients];
+
+  slot.ingredientRefs.forEach((ref) => {
+    const qty = Math.max(1, ref.qty || 1);
+    const byIdIndex = ref.ingredientId ? updated.findIndex((item) => item.id === ref.ingredientId) : -1;
+    if (byIdIndex >= 0) {
+      const item = updated[byIdIndex];
+      updated[byIdIndex] = { ...item, count: item.count + qty };
+      return;
+    }
+
+    const byNameIndex = updated.findIndex((item) => normalizeName(item.name) === normalizeName(ref.name));
+    if (byNameIndex >= 0) {
+      const item = updated[byNameIndex];
+      updated[byNameIndex] = { ...item, count: item.count + qty };
+      return;
+    }
+
+    updated = [
+      {
+        id: createId('ingredient'),
+        name: ref.name,
+        category: 'Other',
+        count: qty,
+        createdAt: new Date().toISOString()
+      },
+      ...updated
+    ];
+  });
+
+  return updated;
+}
+
+function restoreWeekIngredients(ingredients: Ingredient[], plan: WeekPlan): Ingredient[] {
+  let restored = [...ingredients];
+  (Object.keys(plan.grid) as MealType[]).forEach((mealType) => {
+    plan.grid[mealType].forEach((cell) => {
+      if (!cell) return;
+      restored = restoreSlotRefsToInventory(restored, cell.family);
+      Object.values(cell.profiles).forEach((slot) => {
+        restored = restoreSlotRefsToInventory(restored, slot);
+      });
+    });
+  });
+  return restored;
 }
 
 function normalizeWeekPlan(plan: WeekPlan, primaryProfileId: string): WeekPlan {
@@ -358,13 +641,17 @@ function createDemoState() {
   const profiles = baseProfiles();
   const weekStart = toISODate(startOfWeekMonday(new Date()));
   const meals = baseMeals();
+  const ingredients = baseIngredients();
+  const plannedWeek = createPlannedDemoWeek(weekStart, meals, ingredients, profiles);
+  const pinnedMealIds = meals.filter((meal) => meal.pinned).map((meal) => meal.id);
+
   return {
-    ingredients: baseIngredients(),
+    ingredients,
     meals,
     profiles,
-    pinnedMealIds: meals.map((meal) => meal.id),
+    pinnedMealIds,
     weekPlans: {
-      [weekStart]: createEmptyWeekPlan(weekStart)
+      [weekStart]: plannedWeek
     },
     currentWeekStartDate: weekStart,
     inventorySort: 'category' as const
@@ -556,6 +843,18 @@ export const usePlannerStore = create<PlannerState>()(
       },
 
       clearInventory: () => set({ ingredients: [] }),
+      clearCurrentWeekAndRestoreInventory: () => {
+        set((state) => {
+          const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
+          const current = weekPlans[state.currentWeekStartDate];
+          const restoredIngredients = restoreWeekIngredients(state.ingredients, current);
+          weekPlans[state.currentWeekStartDate] = createEmptyWeekPlan(state.currentWeekStartDate);
+          return {
+            ingredients: restoredIngredients,
+            weekPlans
+          };
+        });
+      },
 
       addMeal: (input) => {
         const meal: Meal = {
