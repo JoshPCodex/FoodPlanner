@@ -25,36 +25,36 @@ export function FavoriteMealCard({ meal, isPinned, onTogglePin, onMove, onEdit }
     <div
       ref={setNodeRef}
       className={clsx(
-        'min-w-56 rounded-xl border border-slate-200 bg-gradient-to-br from-cyan-50 to-sky-100 p-3 shadow-sm transition',
+        'glass-panel min-w-56 rounded-2xl p-3 transition',
         isDragging && 'opacity-40'
       )}
       style={{ transform: CSS.Transform.toString(transform) }}
       {...listeners}
       {...attributes}
     >
-      <button className="mb-2 text-left text-sm font-bold text-slate-800 hover:underline" type="button" onClick={() => onEdit(meal)}>
+      <button className="relative z-10 mb-2 text-left text-sm font-bold text-slate-800 hover:underline" type="button" onClick={() => onEdit(meal)}>
         {meal.name}
       </button>
-      <div className="mb-3 flex flex-wrap gap-1 text-xs">
+      <div className="relative z-10 mb-3 flex flex-wrap gap-1 text-xs">
         {meal.ingredients.map((ingredient, index) => (
-          <span key={`${meal.id}-ingredient-${index}`} className="rounded-full bg-white px-2 py-0.5 text-slate-700">
+          <span key={`${meal.id}-ingredient-${index}`} className="pill">
             {ingredient.name}
             {(ingredient.qty ?? 1) > 1 ? ` x${ingredient.qty}` : ''}
           </span>
         ))}
       </div>
-      <div className="flex items-center justify-between text-xs">
+      <div className="relative z-10 flex items-center justify-between text-xs">
         <div className="flex gap-1">
           <button
             type="button"
-            className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-white"
+            className="btn-glass btn-sm"
             onClick={() => onMove(meal.id, 'left')}
           >
             Left
           </button>
           <button
             type="button"
-            className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-white"
+            className="btn-glass btn-sm"
             onClick={() => onMove(meal.id, 'right')}
           >
             Right
@@ -63,7 +63,7 @@ export function FavoriteMealCard({ meal, isPinned, onTogglePin, onMove, onEdit }
 
         <button
           type="button"
-          className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-white"
+          className="btn-glass btn-sm"
           onClick={() => onTogglePin(meal.id)}
         >
           {isPinned ? 'Unpin' : 'Pin'}

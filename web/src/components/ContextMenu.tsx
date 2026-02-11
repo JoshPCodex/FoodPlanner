@@ -21,16 +21,16 @@ export function ContextMenu({ open, x, y, title, actions, onClose }: ContextMenu
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        className="fixed z-50 min-w-52 rounded-lg border border-slate-200 bg-white p-2 shadow-xl"
+        className="glass-panel-strong fixed z-50 min-w-52 rounded-xl p-2"
         style={{ left: x, top: y }}
       >
-        <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>
-        <div className="space-y-1">
+        <div className="relative z-10 mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</div>
+        <div className="relative z-10 space-y-1">
           {actions.map((action) => (
             <button
               key={action.id}
               type="button"
-              className={`w-full rounded-md px-3 py-1.5 text-left text-sm hover:bg-slate-100 ${
+              className={`w-full rounded-lg border border-transparent px-3 py-1.5 text-left text-sm transition hover:border-white/60 hover:bg-white/70 ${
                 action.tone === 'danger' ? 'text-red-700' : 'text-slate-700'
               }`}
               onClick={() => {

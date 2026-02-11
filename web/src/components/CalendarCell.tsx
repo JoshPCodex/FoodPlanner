@@ -55,7 +55,7 @@ function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMe
 
   return (
     <div
-      className="rounded-md border p-1.5"
+      className="glass-panel rounded-xl border p-1.5"
       style={{
         backgroundColor: tint ? hexToRgba(tint, 0.1) : '#f8fafc',
         borderColor: tint ? hexToRgba(tint, 0.45) : '#cbd5e1'
@@ -66,7 +66,7 @@ function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMe
       }}
       {...longPress}
     >
-      <div className="mb-1 flex items-center justify-between gap-1">
+      <div className="relative z-10 mb-1 flex items-center justify-between gap-1">
         <span className="truncate text-[11px] font-semibold" style={{ color: tint ?? '#0f172a' }}>
           {label}
         </span>
@@ -77,7 +77,7 @@ function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMe
         ref={moveDraggable.setNodeRef}
         type="button"
         className={clsx(
-          'inline-flex max-w-full items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-left text-[11px] font-semibold text-emerald-900',
+          'relative z-10 inline-flex max-w-full items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-left text-[11px] font-semibold text-emerald-900',
           moveDraggable.isDragging && 'opacity-50'
         )}
         style={{ transform: CSS.Transform.toString(moveDraggable.transform) }}
@@ -87,7 +87,7 @@ function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMe
         <span className="truncate">{resolveMealName(slot) ?? 'Meal'}</span>
       </button>
 
-      <div className="mt-1 flex flex-wrap gap-1">
+      <div className="relative z-10 mt-1 flex flex-wrap gap-1">
         {slot.ingredientRefs.map((ingredient, index) => (
           <span key={`${ingredient.name}-${index}`} className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-700">
             {ingredient.name}
@@ -96,7 +96,7 @@ function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMe
         ))}
       </div>
 
-      {slot.isLeftovers && <div className="mt-1 text-[10px] font-semibold text-amber-700">Leftovers</div>}
+      {slot.isLeftovers && <div className="relative z-10 mt-1 text-[10px] font-semibold text-amber-700">Leftovers</div>}
     </div>
   );
 }
@@ -117,7 +117,7 @@ function DropTarget({ id, className, label, active, tint }: DropTargetProps) {
       ref={setNodeRef}
       className={clsx(
         className,
-        'rounded-md border border-dashed p-1 text-[10px] font-semibold text-center transition',
+        'rounded-lg border border-dashed p-1 text-[10px] font-semibold text-center transition',
         active ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
         isOver ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-slate-300 bg-white/80 text-slate-500'
       )}
@@ -145,7 +145,7 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
   const showMoveOverlay = activeDragType === 'slot-content';
 
   return (
-    <div className="group relative min-h-32 rounded-lg border border-slate-200 bg-white p-1.5">
+    <div className="glass-panel group relative min-h-32 rounded-xl border p-1.5">
       <div className="space-y-1">
         {familySlot ? (
           <SlotCard
@@ -156,7 +156,7 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
             onSlotContextMenu={onSlotContextMenu}
           />
         ) : (
-          <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-2 py-2 text-[11px] text-slate-500">Family</div>
+          <div className="rounded-lg border border-dashed border-slate-200 bg-white/70 px-2 py-2 text-[11px] text-slate-500">Family</div>
         )}
 
         {personalSlots.map(({ profile, slot }) => (
@@ -172,10 +172,10 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
         ))}
       </div>
 
-      <div className="pointer-events-none absolute inset-1.5">
+      <div className="pointer-events-none absolute inset-1.5 z-20">
         <div
           className={clsx(
-            'h-full w-full rounded-md transition',
+            'h-full w-full rounded-lg transition',
             showAssignmentOverlay || showMoveOverlay ? 'opacity-100' : 'opacity-0',
             (showAssignmentOverlay || showMoveOverlay) && 'group-hover:opacity-100'
           )}
