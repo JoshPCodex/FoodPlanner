@@ -138,7 +138,7 @@ function DropTarget({ id, className, label, active, tint, occupied = false, occu
     >
       <div>{label}</div>
       <div className="mt-0.5 text-[9px] font-medium opacity-90">{statusText}</div>
-      {occupiedHint ? <div className="mt-0.5 truncate text-[9px] opacity-85">{occupiedHint}</div> : null}
+      {occupiedHint ? <div className="mt-0.5 hidden truncate text-[9px] opacity-85 sm:block">{occupiedHint}</div> : null}
     </div>
   );
 }
@@ -151,15 +151,21 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
   const showMoveOverlay = activeDragType === 'slot-content';
   const occupiedCount = (familySlot ? 1 : 0) + personalSlots.length;
   const overlayMode: 'assign' | 'move' = showMoveOverlay ? 'move' : 'assign';
+  const overlayVisible = showAssignmentOverlay || showMoveOverlay;
 
   return (
     <div className="glass-panel group relative min-h-32 rounded-xl border p-1.5 hover:shadow-xl">
-      {occupiedCount > 0 ? (
+      {occupiedCount > 0 && !overlayVisible ? (
         <div className="absolute right-1.5 top-1.5 z-20 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">
           {occupiedCount} planned
         </div>
       ) : null}
-      <div className="space-y-1">
+      <div
+        className={clsx(
+          'space-y-1 transition',
+          overlayVisible ? 'pointer-events-none opacity-20 blur-[0.5px]' : 'opacity-100'
+        )}
+      >
         {familySlot ? (
           <SlotCard
             address={{ mealType, day, targetType: 'family' }}
@@ -189,8 +195,8 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
         <div
           className={clsx(
             'h-full w-full rounded-lg transition',
-            showAssignmentOverlay || showMoveOverlay ? 'opacity-100' : 'opacity-0',
-            (showAssignmentOverlay || showMoveOverlay) && 'group-hover:opacity-100'
+            overlayVisible ? 'opacity-100' : 'opacity-0',
+            overlayVisible && 'group-hover:opacity-100'
           )}
         >
           <div className="grid h-full grid-cols-2 gap-1">

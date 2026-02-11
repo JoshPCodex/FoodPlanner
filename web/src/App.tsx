@@ -800,7 +800,10 @@ export default function App() {
                       onClick={() => setMobileDayIndex(day)}
                       className={`btn-glass btn-sm whitespace-nowrap ${isSelected ? 'btn-primary' : ''} ${isToday ? 'ring-2 ring-cyan-300' : ''}`}
                     >
-                      {name} {formatDisplayDate(dayIsoList[day])}
+                      <span className="sm:hidden">{name}</span>
+                      <span className="hidden sm:inline">
+                        {name} {formatDisplayDate(dayIsoList[day])}
+                      </span>
                     </button>
                   );
                 })}
