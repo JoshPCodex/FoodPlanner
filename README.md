@@ -1,4 +1,4 @@
-# Meal Bubble Planner
+# SupperSync
 
 A simple weekly meal planner for home use. Drag ingredients and favorite meals into the calendar, assign them to Family or a person, and keep a live inventory.
 
@@ -17,6 +17,13 @@ docker compose up --build
 4. Open the app:
 
 [http://localhost:5173](http://localhost:5173)
+
+## Run on iPhone (same Wi-Fi)
+
+1. Keep the app running on your Mac with `docker compose up --build`
+2. Find your Mac local IP (example: `ipconfig getifaddr en0`)
+3. On iPhone Safari, open `http://YOUR-MAC-IP:5173`
+4. Optional: Share -> Add to Home Screen
 
 ## What Is Running
 

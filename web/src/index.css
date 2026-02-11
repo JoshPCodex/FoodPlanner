@@ -36,6 +36,7 @@ body {
     radial-gradient(900px 700px at 50% 120%, rgba(20, 184, 166, 0.34), transparent 58%),
     linear-gradient(180deg, #dcecff 0%, #ecf4ff 38%, #e8f3ff 100%);
   background-attachment: fixed;
+  overflow-x: hidden;
 }
 
 .app-shell {
@@ -68,6 +69,20 @@ body {
   background: rgba(14, 165, 233, 0.22);
 }
 
+.app-shell .shell-content::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.2) 0.5px, transparent 0.5px),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.1), transparent 55%);
+  background-size: 18px 18px, 100% 100%;
+  mix-blend-mode: soft-light;
+  opacity: 0.4;
+  z-index: 0;
+}
+
 .shell-content {
   position: relative;
   z-index: 1;
@@ -81,6 +96,7 @@ body {
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   position: relative;
   overflow: hidden;
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
 }
 
 .glass-panel::before,
@@ -92,6 +108,23 @@ body {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0.06) 45%, rgba(255, 255, 255, 0.16));
 }
 
+.glass-panel::after,
+.glass-panel-strong::after {
+  content: '';
+  position: absolute;
+  inset: -45% -70%;
+  background: conic-gradient(
+    from 90deg at 50% 50%,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent 35%
+  );
+  transform: translate3d(-50%, 0, 0);
+  animation: sheenSweep 7s linear infinite;
+  pointer-events: none;
+  opacity: 0.45;
+}
+
 .glass-panel-strong {
   background: var(--frost-strong);
   border: 1px solid rgba(255, 255, 255, 0.72);
@@ -100,6 +133,12 @@ body {
   -webkit-backdrop-filter: blur(20px) saturate(165%);
   position: relative;
   overflow: hidden;
+}
+
+.glass-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.14);
+  border-color: rgba(255, 255, 255, 0.82);
 }
 
 .frost-input {
@@ -132,12 +171,29 @@ body {
   letter-spacing: 0.01em;
   transition: all 160ms ease;
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  position: relative;
+  overflow: hidden;
 }
 
 .btn-glass:hover {
   transform: translateY(-1px);
   border-color: rgba(71, 85, 105, 0.45);
   background: rgba(255, 255, 255, 0.82);
+}
+
+.btn-glass::after {
+  content: '';
+  position: absolute;
+  left: -120%;
+  top: 0;
+  width: 90%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transition: left 280ms ease;
+}
+
+.btn-glass:hover::after {
+  left: 130%;
 }
 
 .btn-sm {
@@ -208,6 +264,93 @@ body {
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+.hero-title {
+  font-size: clamp(1.05rem, 1.8vw, 1.7rem);
+  font-weight: 760;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.hero-subtitle {
+  font-size: 0.8rem;
+  color: rgba(51, 65, 85, 0.84);
+}
+
+.orbit-glow {
+  position: absolute;
+  inset: -80% auto auto -18%;
+  width: 320px;
+  height: 320px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 50% 50%, rgba(56, 189, 248, 0.35), transparent 64%);
+  filter: blur(4px);
+  animation: floatOrb 8.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.float-in {
+  animation: riseIn 420ms ease both;
+}
+
+.stagger-1 {
+  animation-delay: 40ms;
+}
+
+.stagger-2 {
+  animation-delay: 85ms;
+}
+
+.stagger-3 {
+  animation-delay: 130ms;
+}
+
+.stagger-4 {
+  animation-delay: 170ms;
+}
+
+.stagger-5 {
+  animation-delay: 220ms;
+}
+
+@keyframes sheenSweep {
+  0% {
+    transform: translate3d(-60%, 0, 0) rotate(0deg);
+  }
+  100% {
+    transform: translate3d(60%, 0, 0) rotate(360deg);
+  }
+}
+
+@keyframes floatOrb {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(14px, 24px, 0);
+  }
+}
+
+@keyframes riseIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-panel::after,
+  .glass-panel-strong::after,
+  .orbit-glow,
+  .float-in {
+    animation: none !important;
+  }
 }
 
 button:focus-visible,

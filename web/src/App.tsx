@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { DAY_NAMES, MEAL_LABELS, MEAL_TYPES, CATEGORIES } from './constants';
 import { CalendarCell, SlotAddress } from './components/CalendarCell';
@@ -148,6 +148,7 @@ export default function App() {
     adjustIngredientCount,
     toggleIngredientPinned,
     clearInventory,
+    clearCurrentWeekAndRestoreInventory,
     addMeal,
     updateMeal,
     toggleMealPinned,
@@ -177,6 +178,7 @@ export default function App() {
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [aiImportModalOpen, setAiImportModalOpen] = useState(false);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [iphoneModalOpen, setIphoneModalOpen] = useState(false);
 
   const [newProfileName, setNewProfileName] = useState('');
   const [newProfileColor, setNewProfileColor] = useState('#14b8a6');
@@ -229,6 +231,17 @@ export default function App() {
   }, [ingredients, inventorySort]);
 
   const weekStart = parseISODate(currentWeekStartDate);
+  const dayIsoList = useMemo(
+    () => DAY_NAMES.map((_, day) => addDays(weekStart, day).toISOString().slice(0, 10)),
+    [weekStart]
+  );
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIndexInWeek = dayIsoList.findIndex((value) => value === todayIso);
+  const [mobileDayIndex, setMobileDayIndex] = useState(todayIndexInWeek >= 0 ? todayIndexInWeek : 0);
+
+  useEffect(() => {
+    setMobileDayIndex(todayIndexInWeek >= 0 ? todayIndexInWeek : 0);
+  }, [currentWeekStartDate, todayIndexInWeek]);
 
   function resolveMealName(entry: SlotEntry): string | undefined {
     if (entry.mealId) {
@@ -387,7 +400,7 @@ export default function App() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `meal-bubble-data-${currentWeekStartDate}.json`;
+      link.download = `suppersync-data-${currentWeekStartDate}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -559,8 +572,15 @@ export default function App() {
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="app-shell min-h-screen px-4 py-4 text-slate-800">
         <div className="shell-content mx-auto flex w-full max-w-[1800px] flex-col gap-4">
-          <header className="glass-panel-strong rounded-2xl p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <header className="glass-panel-strong float-in stagger-1 rounded-2xl p-4">
+            <div className="orbit-glow" />
+            <div className="relative z-10 mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <div className="hero-title">SupperSync</div>
+                <div className="hero-subtitle">Plan your week, balance nutrition, and keep inventory in sync.</div>
+              </div>
+            </div>
+            <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -606,6 +626,13 @@ export default function App() {
                 <button
                   type="button"
                   className="btn-glass btn-md"
+                  onClick={() => setIphoneModalOpen(true)}
+                >
+                  iPhone Setup
+                </button>
+                <button
+                  type="button"
+                  className="btn-glass btn-md"
                   onClick={() => {
                     setEditingIngredient(null);
                     setIngredientModalOpen(true);
@@ -633,6 +660,21 @@ export default function App() {
                   }}
                 >
                   Clear Inventory
+                </button>
+                <button
+                  type="button"
+                  className="btn-glass btn-md"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        'Empty this week and return planned ingredients back into inventory? This only clears the currently selected week.'
+                      )
+                    ) {
+                      clearCurrentWeekAndRestoreInventory();
+                    }
+                  }}
+                >
+                  Empty Week
                 </button>
                 <button
                   type="button"
@@ -683,7 +725,7 @@ export default function App() {
             </div>
           </header>
 
-          <section className="glass-panel rounded-2xl p-3">
+          <section className="glass-panel float-in stagger-2 rounded-2xl p-3">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="section-title">Pinned Favorites</h2>
               <div className="text-xs text-slate-500">Drag into a cell and use the hover assignment overlay to pick Family or person</div>
@@ -706,7 +748,7 @@ export default function App() {
           </section>
 
           <main className="grid grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
-            <section className="glass-panel rounded-2xl p-3">
+            <section className="glass-panel float-in stagger-3 rounded-2xl p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="section-title">Ingredient Bubbles</h2>
                 <select
@@ -741,13 +783,85 @@ export default function App() {
               </div>
             </section>
 
-            <section className="glass-panel rounded-2xl p-3">
-              <div className="calendar-grid grid grid-cols-8 gap-2 rounded-2xl p-2">
+            <section className="glass-panel float-in stagger-4 rounded-2xl p-3">
+              <div className="mb-3 flex items-center justify-between lg:hidden">
+                <h3 className="section-title">Day View</h3>
+                <span className="text-xs text-slate-500">Swipe-style planner for mobile</span>
+              </div>
+
+              <div className="mb-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+                {DAY_NAMES.map((name, day) => {
+                  const isSelected = day === mobileDayIndex;
+                  const isToday = dayIsoList[day] === todayIso;
+                  return (
+                    <button
+                      key={`mobile-day-${name}`}
+                      type="button"
+                      onClick={() => setMobileDayIndex(day)}
+                      className={`btn-glass btn-sm whitespace-nowrap ${isSelected ? 'btn-primary' : ''} ${isToday ? 'ring-2 ring-cyan-300' : ''}`}
+                    >
+                      {name} {formatDisplayDate(dayIsoList[day])}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="calendar-grid space-y-2 rounded-2xl p-2 lg:hidden">
+                <div className="glass-panel rounded-lg p-2 text-center">
+                  <div className="text-sm font-semibold text-cyan-800">{DAY_NAMES[mobileDayIndex]}</div>
+                  <div className="text-xs text-cyan-700">{formatDisplayDate(dayIsoList[mobileDayIndex])}</div>
+                  <div className="mt-1 grid grid-cols-2 gap-1">
+                    {profiles.map((profile) => {
+                      const totals = dayTotalsByProfile[mobileDayIndex]?.[profile.id] ?? emptyTotals();
+                      const calPct = percent(totals.calories, profile.goalEnabled ? profile.dailyCalorieGoal : undefined);
+                      return (
+                        <div key={`mobile-day-${mobileDayIndex}-profile-${profile.id}`} className="glass-panel rounded-lg px-1 py-1 text-left">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="truncate text-[10px] font-semibold" style={{ color: profile.color }}>
+                              {profile.name}
+                            </span>
+                            <span className="text-[10px] text-slate-600">
+                              {Math.round(totals.calories)}
+                              {profile.goalEnabled && profile.dailyCalorieGoal ? `/${profile.dailyCalorieGoal}` : ''}
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded bg-slate-200">
+                            <div className="h-full rounded" style={{ width: `${calPct}%`, backgroundColor: profile.color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {MEAL_TYPES.map((mealType) => (
+                  <div key={`mobile-row-${mealType}`} className="grid grid-cols-[88px_1fr] gap-2">
+                    <div className="glass-panel flex items-center rounded-lg px-2 text-sm font-semibold text-slate-600">
+                      {MEAL_LABELS[mealType]}
+                    </div>
+                    <CalendarCell
+                      key={`mobile-${mealType}-${mobileDayIndex}`}
+                      mealType={mealType}
+                      day={mobileDayIndex}
+                      profiles={profiles}
+                      entry={weekPlan.grid[mealType][mobileDayIndex]}
+                      activeDragType={activeDragType}
+                      resolveMealName={resolveMealName}
+                      onSlotContextMenu={openSlotContextMenu}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="calendar-grid hidden grid-cols-8 gap-2 rounded-2xl p-2 lg:grid">
                 <div className="glass-panel rounded-lg p-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Meals</div>
-                {DAY_NAMES.map((name, day) => (
-                  <div key={name} className="glass-panel rounded-lg p-2 text-center">
+                {DAY_NAMES.map((name, day) => {
+                  const dayIso = dayIsoList[day];
+                  const isToday = dayIso === todayIso;
+                  return (
+                  <div key={name} className={`glass-panel rounded-lg p-2 text-center ${isToday ? 'ring-2 ring-cyan-300' : ''}`}>
                     <div className="text-sm font-semibold text-cyan-800">{name}</div>
-                    <div className="text-xs text-cyan-700">{formatDisplayDate(addDays(weekStart, day).toISOString().slice(0, 10))}</div>
+                    <div className="text-xs text-cyan-700">{formatDisplayDate(dayIso)}</div>
                     <div className="mt-1 space-y-1">
                       {profiles.map((profile) => {
                         const totals = dayTotalsByProfile[day]?.[profile.id] ?? emptyTotals();
@@ -788,7 +902,7 @@ export default function App() {
                       })}
                     </div>
                   </div>
-                ))}
+                )})}
 
                 {MEAL_TYPES.map((mealType) => (
                   <div key={`row-${mealType}`} className="contents">
@@ -1090,6 +1204,21 @@ export default function App() {
             >
               Duplicate
             </button>
+          </div>
+        </Modal>
+
+        <Modal open={iphoneModalOpen} onClose={() => setIphoneModalOpen(false)} title="Run on iPhone" widthClassName="max-w-2xl">
+          <div className="space-y-3 text-sm text-slate-700">
+            <p>Use your iPhone on the same Wi-Fi network as your Mac.</p>
+            <ol className="list-decimal space-y-2 pl-5">
+              <li>Start the app on your Mac: <code>docker compose up --build</code></li>
+              <li>Find your Mac’s local IP address (for example with <code>ipconfig getifaddr en0</code> in Terminal).</li>
+              <li>On iPhone Safari, open <code>http://YOUR-MAC-IP:5173</code></li>
+              <li>Optional: tap Share, then Add to Home Screen for app-like launch.</li>
+            </ol>
+            <p className="text-xs text-slate-500">
+              This runs entirely on your local network. Keep Docker running on your Mac while using the app from iPhone.
+            </p>
           </div>
         </Modal>
       </div>
