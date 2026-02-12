@@ -10,18 +10,21 @@ interface MealModalProps {
   onSave: (input: {
     name: string;
     servingsDefault: number;
+    caloriesPerServing?: number;
     pinned: boolean;
     ingredients: MealIngredient[];
   }) => void;
+  onDelete?: (mealId: string) => void;
 }
 
 function emptyIngredient(): MealIngredient {
   return { name: '', qty: 1, category: 'Other' };
 }
 
-export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
+export function MealModal({ open, meal, onClose, onSave, onDelete }: MealModalProps) {
   const [name, setName] = useState('');
   const [servingsDefault, setServingsDefault] = useState(2);
+  const [caloriesPerServing, setCaloriesPerServing] = useState('');
   const [pinned, setPinned] = useState(true);
   const [ingredients, setIngredients] = useState<MealIngredient[]>([emptyIngredient()]);
 
@@ -30,11 +33,13 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
     if (meal) {
       setName(meal.name);
       setServingsDefault(meal.servingsDefault);
+      setCaloriesPerServing(meal.caloriesPerServing === undefined ? '' : String(meal.caloriesPerServing));
       setPinned(Boolean(meal.pinned));
       setIngredients(meal.ingredients.length > 0 ? meal.ingredients : [emptyIngredient()]);
     } else {
       setName('');
       setServingsDefault(2);
+      setCaloriesPerServing('');
       setPinned(true);
       setIngredients([emptyIngredient()]);
     }
@@ -59,6 +64,10 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
           onSave({
             name: name.trim(),
             servingsDefault: Math.max(1, Math.floor(servingsDefault)),
+            caloriesPerServing:
+              caloriesPerServing.trim() && Number.isFinite(Number(caloriesPerServing))
+                ? Math.max(0, Number(caloriesPerServing))
+                : undefined,
             pinned,
             ingredients: cleaned
           });
@@ -76,7 +85,7 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
           />
         </label>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-sm font-semibold text-slate-700">Default servings</span>
             <input
@@ -85,6 +94,17 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
               className="frost-input w-full px-3 py-2"
               value={servingsDefault}
               onChange={(event) => setServingsDefault(Number(event.target.value))}
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">Calories / serving</span>
+            <input
+              type="number"
+              min={0}
+              className="frost-input w-full px-3 py-2"
+              value={caloriesPerServing}
+              onChange={(event) => setCaloriesPerServing(event.target.value)}
             />
           </label>
 
@@ -164,6 +184,11 @@ export function MealModal({ open, meal, onClose, onSave }: MealModalProps) {
         </div>
 
         <div className="flex justify-end gap-2">
+          {meal && onDelete ? (
+            <button type="button" onClick={() => onDelete(meal.id)} className="btn-glass btn-md btn-danger mr-auto">
+              Delete Meal
+            </button>
+          ) : null}
           <button type="button" onClick={onClose} className="btn-glass btn-md">
             Cancel
           </button>

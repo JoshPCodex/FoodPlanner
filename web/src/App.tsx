@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, MouseSensor, TouchSensor, pointerWithin, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { DAY_NAMES, MEAL_LABELS, MEAL_TYPES, CATEGORIES } from './constants';
 import { CalendarCell, SlotAddress } from './components/CalendarCell';
 import { ContextMenu } from './components/ContextMenu';
@@ -68,7 +68,7 @@ function emptyPlan(weekStartDate: string): WeekPlan {
 }
 
 function parseSlotId(id: string): SlotAddress | null {
-  const familyMatch = id.match(/^slot-(breakfast|lunch|dinner|snack)-([0-6])-family$/);
+  const familyMatch = id.match(/^(?:(?:mobile|desktop)-)?slot-(breakfast|lunch|dinner|snack)-([0-6])-family$/);
   if (familyMatch) {
     return {
       mealType: familyMatch[1] as MealType,
@@ -77,7 +77,7 @@ function parseSlotId(id: string): SlotAddress | null {
     };
   }
 
-  const profileMatch = id.match(/^slot-(breakfast|lunch|dinner|snack)-([0-6])-profile-(.+)$/);
+  const profileMatch = id.match(/^(?:(?:mobile|desktop)-)?slot-(breakfast|lunch|dinner|snack)-([0-6])-profile-(.+)$/);
   if (profileMatch) {
     return {
       mealType: profileMatch[1] as MealType,
@@ -137,6 +137,10 @@ export default function App() {
     weekPlans,
     currentWeekStartDate,
     inventorySort,
+    past,
+    future,
+    undo,
+    redo,
     shiftWeek,
     setInventorySort,
     addProfile,
@@ -151,12 +155,14 @@ export default function App() {
     clearCurrentWeekAndRestoreInventory,
     addMeal,
     updateMeal,
+    deleteMeal,
     toggleMealPinned,
     movePinnedMeal,
     dropIngredientToCell,
     dropMealToCell,
     moveOrSwapCell,
     clearCell,
+    removeCellToInventory,
     duplicateCell,
     makeLeftovers,
     setCellServings,
@@ -204,6 +210,43 @@ export default function App() {
       }
     })
   );
+  const { setNodeRef: setInventoryDropRef, isOver: isOverInventoryDrop } = useDroppable({ id: 'inventory-drop' });
+  const inventoryWasOverDuringDragRef = useRef(false);
+  const inventoryPanelRef = useRef<HTMLElement | null>(null);
+  const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const canUndo = past.length > 0;
+  const canRedo = future.length > 0;
+  const setInventoryDropNode = useCallback(
+    (node: HTMLElement | null) => {
+      setInventoryDropRef(node);
+      inventoryPanelRef.current = node;
+    },
+    [setInventoryDropRef]
+  );
+
+  useEffect(() => {
+    if (activeDragType !== 'slot-content') {
+      inventoryWasOverDuringDragRef.current = false;
+      return;
+    }
+    if (isOverInventoryDrop) {
+      inventoryWasOverDuringDragRef.current = true;
+    }
+  }, [activeDragType, isOverInventoryDrop]);
+
+  useEffect(() => {
+    if (activeDragType !== 'slot-content') {
+      pointerPositionRef.current = null;
+      return;
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      pointerPositionRef.current = { x: event.clientX, y: event.clientY };
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onPointerMove);
+  }, [activeDragType]);
 
   const mealById = useMemo(() => new Map(meals.map((meal) => [meal.id, meal])), [meals]);
 
@@ -217,6 +260,7 @@ export default function App() {
     () => pinnedMealIds.map((id) => mealById.get(id)).filter((meal): meal is Meal => Boolean(meal)),
     [mealById, pinnedMealIds]
   );
+  const allMeals = useMemo(() => [...meals].sort((a, b) => a.name.localeCompare(b.name)), [meals]);
 
   const groupedIngredients = useMemo(() => {
     const sorted = [...ingredients].sort((a, b) => {
@@ -425,6 +469,7 @@ export default function App() {
   }
 
   function handleDragStart(event: DragStartEvent) {
+    inventoryWasOverDuringDragRef.current = false;
     const label = (event.active.data.current?.label as string | undefined) ?? 'Dragging';
     const dragType = (event.active.data.current?.dragType as string | undefined) ?? null;
     setActiveDragLabel(label);
@@ -434,12 +479,41 @@ export default function App() {
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragLabel('');
     setActiveDragType(null);
-    if (!event.over) return;
+    const dragType = event.active.data.current?.dragType;
+    const overId = event.over ? String(event.over.id) : '';
+    const pointer = pointerPositionRef.current;
+    const panelRect = inventoryPanelRef.current?.getBoundingClientRect();
+    const pointerInsideInventory = Boolean(
+      pointer &&
+      panelRect &&
+      pointer.x >= panelRect.left &&
+      pointer.x <= panelRect.right &&
+      pointer.y >= panelRect.top &&
+      pointer.y <= panelRect.bottom
+    );
+
+    if (
+      dragType === 'slot-content' &&
+      (overId.startsWith('inventory-drop') || (!event.over && inventoryWasOverDuringDragRef.current) || pointerInsideInventory)
+    ) {
+      const source = event.active.data.current?.source as SlotAddress | undefined;
+      if (source) {
+        removeCellToInventory(source);
+      }
+      inventoryWasOverDuringDragRef.current = false;
+      pointerPositionRef.current = null;
+      return;
+    }
+
+    if (!event.over) {
+      inventoryWasOverDuringDragRef.current = false;
+      pointerPositionRef.current = null;
+      return;
+    }
 
     const overAddress = parseSlotId(String(event.over.id));
     if (!overAddress) return;
 
-    const dragType = event.active.data.current?.dragType;
     if (dragType === 'ingredient') {
       const ingredientId = String(event.active.data.current?.ingredientId ?? '');
       if (ingredientId) {
@@ -452,6 +526,15 @@ export default function App() {
       const mealId = String(event.active.data.current?.mealId ?? '');
       if (mealId) {
         dropMealToCell(overAddress, mealId);
+        if (overAddress.targetType === 'family') {
+          const value = window.prompt('Family servings for this slot? Leave blank to keep current value.', '2');
+          if (value !== null && value.trim() !== '') {
+            const servings = Number(value);
+            if (Number.isFinite(servings) && servings > 0) {
+              setCellServings(overAddress, servings);
+            }
+          }
+        }
       }
       return;
     }
@@ -462,6 +545,8 @@ export default function App() {
         moveOrSwapCell(source, overAddress);
       }
     }
+    inventoryWasOverDuringDragRef.current = false;
+    pointerPositionRef.current = null;
   }
 
   const slotMenuActions = useMemo(() => {
@@ -507,13 +592,19 @@ export default function App() {
         }
       },
       {
+        id: 'remove',
+        label: 'Remove (return to inventory)',
+        onClick: () => removeCellToInventory(address),
+        tone: 'danger' as const
+      },
+      {
         id: 'clear',
-        label: 'Clear section',
+        label: 'Clear without restoring',
         onClick: () => clearCell(address),
         tone: 'danger' as const
       }
     ];
-  }, [clearCell, contextMenu, makeLeftovers, profiles, saveCellAsMeal, setCellServings]);
+  }, [clearCell, contextMenu, makeLeftovers, profiles, removeCellToInventory, saveCellAsMeal, setCellServings]);
 
   const ingredientMenuActions = useMemo(() => {
     if (!contextMenu || contextMenu.type !== 'ingredient') return [];
@@ -577,7 +668,7 @@ export default function App() {
   }, [adjustIngredientCount, contextMenu, deleteIngredient, toggleIngredientPinned, updateIngredient]);
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className={`app-shell min-h-screen px-4 py-4 text-slate-800 ${activeDragType ? 'drag-active' : ''}`}>
         <div className="shell-content mx-auto flex w-full max-w-[1800px] flex-col gap-4">
           <header className="glass-panel-strong float-in stagger-1 rounded-2xl p-4">
@@ -606,6 +697,12 @@ export default function App() {
                   onClick={() => shiftWeek(1)}
                 >
                   Next
+                </button>
+                <button type="button" className="btn-glass btn-sm" onClick={undo} disabled={!canUndo}>
+                  Undo
+                </button>
+                <button type="button" className="btn-glass btn-sm" onClick={redo} disabled={!canRedo}>
+                  Redo
                 </button>
               </div>
 
@@ -746,6 +843,13 @@ export default function App() {
                   isPinned={pinnedMealIds.includes(meal.id)}
                   onTogglePin={toggleMealPinned}
                   onMove={movePinnedMeal}
+                  onDelete={(mealId) => {
+                    const target = mealById.get(mealId);
+                    if (!target) return;
+                    if (window.confirm(`Delete meal ${target.name}?`)) {
+                      deleteMeal(mealId);
+                    }
+                  }}
                   onEdit={(value) => {
                     setEditingMeal(value);
                     setMealModalOpen(true);
@@ -755,8 +859,60 @@ export default function App() {
             </div>
           </section>
 
+          <section className="glass-panel rounded-2xl p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="section-title">All Meals</h2>
+              <div className="text-xs text-slate-500">Edit, pin, or delete individual meals</div>
+            </div>
+            <div className="max-h-48 space-y-2 overflow-auto pr-1">
+              {allMeals.map((meal) => (
+                <div key={`all-meal-${meal.id}`} className="glass-panel flex items-center justify-between gap-2 rounded-xl px-2 py-1.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-800">{meal.name}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {meal.servingsDefault} servings{meal.caloriesPerServing ? ` • ${meal.caloriesPerServing} cal/serving` : ''}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button type="button" className="btn-glass btn-sm" onClick={() => toggleMealPinned(meal.id)}>
+                      {pinnedMealIds.includes(meal.id) ? 'Unpin' : 'Pin'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-glass btn-sm"
+                      onClick={() => {
+                        setEditingMeal(meal);
+                        setMealModalOpen(true);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-glass btn-sm btn-danger"
+                      onClick={() => {
+                        if (window.confirm(`Delete meal ${meal.name}?`)) deleteMeal(meal.id);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <main className="grid grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
-            <section className="glass-panel float-in stagger-3 rounded-2xl p-3">
+            <section
+              ref={setInventoryDropNode}
+              className={`glass-panel float-in stagger-3 rounded-2xl p-3 transition ${
+                activeDragType === 'slot-content'
+                  ? isOverInventoryDrop
+                    ? 'ring-2 ring-emerald-400'
+                    : 'ring-1 ring-emerald-200'
+                  : ''
+              }`}
+            >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="section-title">Ingredient Bubbles</h2>
                 <select
@@ -767,6 +923,19 @@ export default function App() {
                   <option value="category">Sort: Category</option>
                   <option value="expiry">Sort: Soonest to expire</option>
                 </select>
+              </div>
+              <div
+                className={`mb-2 rounded-lg border px-2 py-1.5 text-xs font-semibold transition ${
+                  activeDragType === 'slot-content'
+                    ? isOverInventoryDrop
+                      ? 'border-emerald-400 bg-emerald-100 text-emerald-900'
+                      : 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                    : 'border-slate-200 bg-white/70 text-slate-500'
+                }`}
+              >
+                {activeDragType === 'slot-content'
+                  ? 'Drop here to remove from calendar and restock inventory'
+                  : 'Drag a planned slot here to restock inventory'}
               </div>
 
               <div className="space-y-4">
@@ -852,6 +1021,7 @@ export default function App() {
                     </div>
                     <CalendarCell
                       key={`mobile-${mealType}-${mobileDayIndex}`}
+                      idPrefix="mobile"
                       mealType={mealType}
                       day={mobileDayIndex}
                       profiles={profiles}
@@ -859,6 +1029,7 @@ export default function App() {
                       activeDragType={activeDragType}
                       resolveMealName={resolveMealName}
                       onSlotContextMenu={openSlotContextMenu}
+                      onRemoveSlot={removeCellToInventory}
                     />
                   </div>
                 ))}
@@ -923,6 +1094,7 @@ export default function App() {
                     {Array.from({ length: 7 }).map((_, day) => (
                       <CalendarCell
                         key={`${mealType}-${day}`}
+                        idPrefix="desktop"
                         mealType={mealType}
                         day={day}
                         profiles={profiles}
@@ -930,6 +1102,7 @@ export default function App() {
                         activeDragType={activeDragType}
                         resolveMealName={resolveMealName}
                         onSlotContextMenu={openSlotContextMenu}
+                        onRemoveSlot={removeCellToInventory}
                       />
                     ))}
                   </div>
@@ -974,6 +1147,15 @@ export default function App() {
           open={mealModalOpen}
           meal={editingMeal}
           onClose={() => setMealModalOpen(false)}
+          onDelete={(mealId) => {
+            const target = mealById.get(mealId);
+            if (!target) return;
+            if (window.confirm(`Delete meal ${target.name}?`)) {
+              deleteMeal(mealId);
+              setMealModalOpen(false);
+              setEditingMeal(null);
+            }
+          }}
           onSave={(values) => {
             if (editingMeal) {
               const currentlyPinned = pinnedMealIds.includes(editingMeal.id);

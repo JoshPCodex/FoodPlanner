@@ -9,9 +9,10 @@ interface FavoriteMealCardProps {
   onTogglePin: (mealId: string) => void;
   onMove: (mealId: string, direction: 'left' | 'right') => void;
   onEdit: (meal: Meal) => void;
+  onDelete: (mealId: string) => void;
 }
 
-export function FavoriteMealCard({ meal, isPinned, onTogglePin, onMove, onEdit }: FavoriteMealCardProps) {
+export function FavoriteMealCard({ meal, isPinned, onTogglePin, onMove, onEdit, onDelete }: FavoriteMealCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `meal-${meal.id}`,
     data: {
@@ -67,6 +68,9 @@ export function FavoriteMealCard({ meal, isPinned, onTogglePin, onMove, onEdit }
           onClick={() => onTogglePin(meal.id)}
         >
           {isPinned ? 'Unpin' : 'Pin'}
+        </button>
+        <button type="button" className="btn-glass btn-sm btn-danger" onClick={() => onDelete(meal.id)}>
+          Delete
         </button>
       </div>
     </div>

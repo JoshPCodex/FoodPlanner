@@ -12,6 +12,7 @@ export interface SlotAddress {
 }
 
 interface CalendarCellProps {
+  idPrefix: string;
   mealType: MealType;
   day: number;
   profiles: Profile[];
@@ -19,6 +20,7 @@ interface CalendarCellProps {
   activeDragType: string | null;
   resolveMealName: (entry: SlotEntry) => string | undefined;
   onSlotContextMenu: (address: SlotAddress, x: number, y: number) => void;
+  onRemoveSlot: (address: SlotAddress) => void;
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -33,17 +35,19 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 interface SlotCardProps {
+  idPrefix: string;
   address: SlotAddress;
   label: string;
   tint?: string;
   slot: SlotEntry;
   resolveMealName: (entry: SlotEntry) => string | undefined;
   onSlotContextMenu: (address: SlotAddress, x: number, y: number) => void;
+  onRemoveSlot: (address: SlotAddress) => void;
 }
 
-function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMenu }: SlotCardProps) {
+function SlotCard({ idPrefix, address, label, tint, slot, resolveMealName, onSlotContextMenu, onRemoveSlot }: SlotCardProps) {
   const moveDraggable = useDraggable({
-    id: `slot-content-${address.mealType}-${address.day}-${address.targetType}${address.profileId ? `-${address.profileId}` : ''}`,
+    id: `${idPrefix}-slot-content-${address.mealType}-${address.day}-${address.targetType}${address.profileId ? `-${address.profileId}` : ''}`,
     data: {
       dragType: 'slot-content',
       source: address,
@@ -70,7 +74,17 @@ function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMe
         <span className="truncate text-[11px] font-semibold" style={{ color: tint ?? '#0f172a' }}>
           {label}
         </span>
-        <span className="text-[10px] text-slate-500">Servings {slot.servings}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-slate-500">Servings {slot.servings}</span>
+          <button
+            type="button"
+            className="btn-glass btn-sm text-[10px]"
+            onClick={() => onRemoveSlot(address)}
+            title="Remove from calendar and restock inventory"
+          >
+            Restock
+          </button>
+        </div>
       </div>
 
       <button
@@ -143,7 +157,17 @@ function DropTarget({ id, className, label, active, tint, occupied = false, occu
   );
 }
 
-export function CalendarCell({ mealType, day, profiles, entry, activeDragType, resolveMealName, onSlotContextMenu }: CalendarCellProps) {
+export function CalendarCell({
+  idPrefix,
+  mealType,
+  day,
+  profiles,
+  entry,
+  activeDragType,
+  resolveMealName,
+  onSlotContextMenu,
+  onRemoveSlot
+}: CalendarCellProps) {
   const familySlot = entry?.family ?? null;
   const profileSlots = profiles.map((profile) => ({ profile, slot: entry?.profiles?.[profile.id] ?? null }));
   const personalSlots = profileSlots.filter((item) => Boolean(item.slot)) as Array<{ profile: Profile; slot: SlotEntry }>;
@@ -168,11 +192,13 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
       >
         {familySlot ? (
           <SlotCard
+            idPrefix={idPrefix}
             address={{ mealType, day, targetType: 'family' }}
             label="Family"
             slot={familySlot}
             resolveMealName={resolveMealName}
             onSlotContextMenu={onSlotContextMenu}
+            onRemoveSlot={onRemoveSlot}
           />
         ) : (
           <div className="rounded-lg border border-dashed border-slate-200 bg-white/70 px-2 py-2 text-[11px] text-slate-500">Family</div>
@@ -180,6 +206,7 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
 
         {personalSlots.map(({ profile, slot }) => (
           <SlotCard
+            idPrefix={idPrefix}
             key={`slot-${mealType}-${day}-${profile.id}`}
             address={{ mealType, day, targetType: 'profile', profileId: profile.id }}
             label={profile.name}
@@ -187,6 +214,7 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
             slot={slot}
             resolveMealName={resolveMealName}
             onSlotContextMenu={onSlotContextMenu}
+            onRemoveSlot={onRemoveSlot}
           />
         ))}
       </div>
@@ -201,7 +229,7 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
         >
           <div className="grid h-full grid-cols-2 gap-1">
             <DropTarget
-              id={`slot-${mealType}-${day}-family`}
+              id={`${idPrefix}-slot-${mealType}-${day}-family`}
               className="h-full"
               label="Family"
               active={showAssignmentOverlay || showMoveOverlay}
@@ -214,7 +242,7 @@ export function CalendarCell({ mealType, day, profiles, entry, activeDragType, r
               {profileSlots.map(({ profile, slot }) => (
                 <DropTarget
                   key={`drop-${mealType}-${day}-${profile.id}`}
-                  id={`slot-${mealType}-${day}-profile-${profile.id}`}
+                  id={`${idPrefix}-slot-${mealType}-${day}-profile-${profile.id}`}
                   className="h-full"
                   label={profile.name}
                   active={showAssignmentOverlay || showMoveOverlay}

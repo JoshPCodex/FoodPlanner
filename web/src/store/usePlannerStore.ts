@@ -36,7 +36,11 @@ interface PlannerState {
   weekPlans: Record<string, WeekPlan>;
   currentWeekStartDate: string;
   inventorySort: 'category' | 'expiry';
+  past: PlannerSnapshot[];
+  future: PlannerSnapshot[];
 
+  undo: () => void;
+  redo: () => void;
   shiftWeek: (delta: number) => void;
   setWeek: (weekStartDate: string) => void;
   setInventorySort: (value: 'category' | 'expiry') => void;
@@ -71,6 +75,7 @@ interface PlannerState {
   dropMealToCell: (address: SlotAddress, mealId: string) => void;
   moveOrSwapCell: (source: SlotAddress, target: SlotAddress) => void;
   clearCell: (address: SlotAddress) => void;
+  removeCellToInventory: (address: SlotAddress) => void;
   duplicateCell: (source: SlotAddress, target: SlotAddress) => void;
   makeLeftovers: (address: SlotAddress) => void;
   setCellServings: (address: SlotAddress, servings: number) => void;
@@ -82,6 +87,16 @@ interface PlannerState {
   importState: (payload: PlannerExportShape) => void;
 
   getCurrentWeekPlan: () => WeekPlan;
+}
+
+interface PlannerSnapshot {
+  ingredients: Ingredient[];
+  meals: Meal[];
+  profiles: Profile[];
+  pinnedMealIds: string[];
+  weekPlans: Record<string, WeekPlan>;
+  currentWeekStartDate: string;
+  inventorySort: 'category' | 'expiry';
 }
 
 function createId(prefix: string): string {
@@ -144,6 +159,19 @@ function clonePlan(plan: WeekPlan): WeekPlan {
   };
 }
 
+function normalizeServingsPerCount(value?: number): number {
+  if (!value || !Number.isFinite(value)) return 1;
+  return Math.max(0.01, value);
+}
+
+function servingsToCountDelta(servingsQty: number, servingsPerCount?: number): number {
+  return servingsQty / normalizeServingsPerCount(servingsPerCount);
+}
+
+function roundCount(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function addIngredientRef(list: IngredientRef[], incoming: IngredientRef): IngredientRef[] {
   const key = incoming.ingredientId ? `id:${incoming.ingredientId}` : `name:${normalizeName(incoming.name)}`;
   const copy = list.map((item) => ({ ...item }));
@@ -159,6 +187,14 @@ function addIngredientRef(list: IngredientRef[], incoming: IngredientRef): Ingre
   }
 
   return copy;
+}
+
+function scaleIngredientRefs(list: IngredientRef[], ratio: number): IngredientRef[] {
+  const safeRatio = Number.isFinite(ratio) ? ratio : 1;
+  return list.map((item) => ({
+    ...item,
+    qty: Math.max(0.01, Math.round(item.qty * safeRatio * 100) / 100)
+  }));
 }
 
 function getCell(plan: WeekPlan, address: CellAddress): CellEntry | null {
@@ -268,6 +304,7 @@ function baseIngredients(): Ingredient[] {
     name: String(name),
     category: category as IngredientCategory,
     count: Number(count),
+    servingsPerCount: 1,
     createdAt: now
   }));
 }
@@ -401,9 +438,154 @@ function baseMeals(): Meal[] {
       name: 'Protein Bar + Fruit',
       pinned: false,
       servingsDefault: 1,
+      caloriesPerServing: 280,
       ingredients: [
         { name: 'protein bar', category: 'Other', qty: 1 },
         { name: 'apple', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Chicken Stir Fry',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 520,
+      ingredients: [
+        { name: 'chicken breast', category: 'Protein', qty: 2 },
+        { name: 'rice', category: 'Pantry', qty: 2 },
+        { name: 'bell pepper', category: 'Produce', qty: 1 },
+        { name: 'onion', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Breakfast Burritos',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 480,
+      ingredients: [
+        { name: 'eggs', category: 'Dairy', qty: 2 },
+        { name: 'tortilla', category: 'Pantry', qty: 2 },
+        { name: 'cheddar cheese', category: 'Dairy', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Greek Yogurt Parfait',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 350,
+      ingredients: [
+        { name: 'greek yogurt', category: 'Dairy', qty: 2 },
+        { name: 'granola', category: 'Pantry', qty: 1 },
+        { name: 'blueberries', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Beef + Rice Skillet',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 610,
+      ingredients: [
+        { name: 'ground beef', category: 'Protein', qty: 2 },
+        { name: 'rice', category: 'Pantry', qty: 2 },
+        { name: 'onion', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Turkey Bagel Melt',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 470,
+      ingredients: [
+        { name: 'turkey slices', category: 'Protein', qty: 2 },
+        { name: 'bagel', category: 'Pantry', qty: 2 },
+        { name: 'mozzarella', category: 'Dairy', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Pork Loin + Veggies',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 560,
+      ingredients: [
+        { name: 'pork loin', category: 'Protein', qty: 2 },
+        { name: 'broccoli', category: 'Produce', qty: 1 },
+        { name: 'carrots', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Quinoa Veggie Bowl',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 430,
+      ingredients: [
+        { name: 'quinoa', category: 'Pantry', qty: 2 },
+        { name: 'spinach', category: 'Produce', qty: 1 },
+        { name: 'cucumber', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Peanut Butter Banana Toast',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 390,
+      ingredients: [
+        { name: 'bread', category: 'Pantry', qty: 2 },
+        { name: 'peanut butter', category: 'Pantry', qty: 1 },
+        { name: 'banana', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Salmon Pasta',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 590,
+      ingredients: [
+        { name: 'salmon', category: 'Protein', qty: 2 },
+        { name: 'spaghetti', category: 'Pantry', qty: 2 },
+        { name: 'pasta sauce', category: 'Pantry', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Chicken Caesar Wraps',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 500,
+      ingredients: [
+        { name: 'chicken breast', category: 'Protein', qty: 2 },
+        { name: 'tortilla', category: 'Pantry', qty: 2 },
+        { name: 'lettuce', category: 'Produce', qty: 1 }
+      ],
+      createdAt: now
+    },
+    {
+      id: createId('meal'),
+      name: 'Egg Scramble + Toast',
+      pinned: false,
+      servingsDefault: 2,
+      caloriesPerServing: 410,
+      ingredients: [
+        { name: 'eggs', category: 'Dairy', qty: 2 },
+        { name: 'bread', category: 'Pantry', qty: 2 },
+        { name: 'spinach', category: 'Produce', qty: 1 }
       ],
       createdAt: now
     }
@@ -526,14 +708,16 @@ function restoreSlotRefsToInventory(ingredients: Ingredient[], slot: SlotEntry |
     const byIdIndex = ref.ingredientId ? updated.findIndex((item) => item.id === ref.ingredientId) : -1;
     if (byIdIndex >= 0) {
       const item = updated[byIdIndex];
-      updated[byIdIndex] = { ...item, count: item.count + qty };
+      const deltaCount = servingsToCountDelta(qty, item.servingsPerCount);
+      updated[byIdIndex] = { ...item, count: roundCount(item.count + deltaCount) };
       return;
     }
 
     const byNameIndex = updated.findIndex((item) => normalizeName(item.name) === normalizeName(ref.name));
     if (byNameIndex >= 0) {
       const item = updated[byNameIndex];
-      updated[byNameIndex] = { ...item, count: item.count + qty };
+      const deltaCount = servingsToCountDelta(qty, item.servingsPerCount);
+      updated[byNameIndex] = { ...item, count: roundCount(item.count + deltaCount) };
       return;
     }
 
@@ -543,6 +727,7 @@ function restoreSlotRefsToInventory(ingredients: Ingredient[], slot: SlotEntry |
         name: ref.name,
         category: 'Other',
         count: qty,
+        servingsPerCount: 1,
         createdAt: new Date().toISOString()
       },
       ...updated
@@ -564,6 +749,25 @@ function restoreWeekIngredients(ingredients: Ingredient[], plan: WeekPlan): Ingr
     });
   });
   return restored;
+}
+
+function adjustInventoryForIngredientRefs(
+  ingredients: Ingredient[],
+  refs: IngredientRef[],
+  direction: 'consume' | 'restore'
+): Ingredient[] {
+  const multiplier = direction === 'consume' ? -1 : 1;
+  return ingredients.map((ingredient) => {
+    let nextCount = ingredient.count;
+    refs.forEach((ref) => {
+      const matchById = ref.ingredientId && ref.ingredientId === ingredient.id;
+      const matchByName = !ref.ingredientId && normalizeName(ref.name) === normalizeName(ingredient.name);
+      if (!matchById && !matchByName) return;
+      const delta = servingsToCountDelta(ref.qty, ingredient.servingsPerCount);
+      nextCount += delta * multiplier;
+    });
+    return { ...ingredient, count: roundCount(Math.max(0, nextCount)) };
+  });
 }
 
 function normalizeWeekPlan(plan: WeekPlan, primaryProfileId: string): WeekPlan {
@@ -654,11 +858,43 @@ function createDemoState() {
       [weekStart]: plannedWeek
     },
     currentWeekStartDate: weekStart,
-    inventorySort: 'category' as const
+    inventorySort: 'category' as const,
+    past: [],
+    future: []
   };
 }
 
 const demoState = createDemoState();
+
+const HISTORY_LIMIT = 100;
+
+function snapshotFromState(state: Pick<PlannerState, 'ingredients' | 'meals' | 'profiles' | 'pinnedMealIds' | 'weekPlans' | 'currentWeekStartDate' | 'inventorySort'>): PlannerSnapshot {
+  return {
+    ingredients: state.ingredients.map((item) => ({ ...item })),
+    meals: state.meals.map((meal) => ({
+      ...meal,
+      ingredients: meal.ingredients.map((ingredient) => ({ ...ingredient }))
+    })),
+    profiles: state.profiles.map((profile) => ({ ...profile })),
+    pinnedMealIds: [...state.pinnedMealIds],
+    weekPlans: Object.fromEntries(Object.entries(state.weekPlans).map(([key, plan]) => [key, clonePlan(plan)])),
+    currentWeekStartDate: state.currentWeekStartDate,
+    inventorySort: state.inventorySort
+  };
+}
+
+function commitWithHistory(
+  state: PlannerState,
+  patch: Partial<PlannerSnapshot> | null
+): Partial<PlannerState> | PlannerState {
+  if (!patch) return state;
+  const nextPast = [...state.past, snapshotFromState(state)].slice(-HISTORY_LIMIT);
+  return {
+    ...patch,
+    past: nextPast,
+    future: []
+  };
+}
 
 function ensurePlan(weekPlans: Record<string, WeekPlan>, weekStartDate: string): Record<string, WeekPlan> {
   if (weekPlans[weekStartDate]) return weekPlans;
@@ -669,6 +905,32 @@ export const usePlannerStore = create<PlannerState>()(
   persist(
     (set, get) => ({
       ...demoState,
+
+      undo: () => {
+        set((state) => {
+          if (state.past.length === 0) return state;
+          const previous = state.past[state.past.length - 1];
+          const currentSnapshot = snapshotFromState(state);
+          return {
+            ...previous,
+            past: state.past.slice(0, -1),
+            future: [currentSnapshot, ...state.future].slice(0, HISTORY_LIMIT)
+          };
+        });
+      },
+
+      redo: () => {
+        set((state) => {
+          if (state.future.length === 0) return state;
+          const next = state.future[0];
+          const currentSnapshot = snapshotFromState(state);
+          return {
+            ...next,
+            past: [...state.past, currentSnapshot].slice(-HISTORY_LIMIT),
+            future: state.future.slice(1)
+          };
+        });
+      },
 
       shiftWeek: (delta) => {
         const currentDate = parseISODate(get().currentWeekStartDate);
@@ -690,42 +952,46 @@ export const usePlannerStore = create<PlannerState>()(
 
       addProfile: ({ name, color }) => {
         set((state) => ({
-          profiles: [
-            ...state.profiles,
-            {
-              id: createId('profile'),
-              name: name.trim() || `Person ${state.profiles.length + 1}`,
-              color,
-              goalEnabled: false,
-              createdAt: new Date().toISOString()
-            }
-          ]
+          ...commitWithHistory(state, {
+            profiles: [
+              ...state.profiles,
+              {
+                id: createId('profile'),
+                name: name.trim() || `Person ${state.profiles.length + 1}`,
+                color,
+                goalEnabled: false,
+                createdAt: new Date().toISOString()
+              }
+            ]
+          })
         }));
       },
 
       updateProfile: (id, updates) => {
         set((state) => ({
-          profiles: state.profiles.map((profile) => {
-            if (profile.id !== id) return profile;
-            const next: Profile = {
-              ...profile,
-              name: updates.name?.trim() || profile.name,
-              color: updates.color ?? profile.color,
-              goalEnabled: updates.goalEnabled ?? profile.goalEnabled,
-              dailyCalorieGoal: updates.dailyCalorieGoal ?? profile.dailyCalorieGoal,
-              dailyProteinGoalG: updates.dailyProteinGoalG ?? profile.dailyProteinGoalG,
-              dailyCarbsGoalG: updates.dailyCarbsGoalG ?? profile.dailyCarbsGoalG,
-              dailyFatGoalG: updates.dailyFatGoalG ?? profile.dailyFatGoalG
-            };
+          ...commitWithHistory(state, {
+            profiles: state.profiles.map((profile) => {
+              if (profile.id !== id) return profile;
+              const next: Profile = {
+                ...profile,
+                name: updates.name?.trim() || profile.name,
+                color: updates.color ?? profile.color,
+                goalEnabled: updates.goalEnabled ?? profile.goalEnabled,
+                dailyCalorieGoal: updates.dailyCalorieGoal ?? profile.dailyCalorieGoal,
+                dailyProteinGoalG: updates.dailyProteinGoalG ?? profile.dailyProteinGoalG,
+                dailyCarbsGoalG: updates.dailyCarbsGoalG ?? profile.dailyCarbsGoalG,
+                dailyFatGoalG: updates.dailyFatGoalG ?? profile.dailyFatGoalG
+              };
 
-            if (!next.goalEnabled) {
-              next.dailyCalorieGoal = undefined;
-              next.dailyProteinGoalG = undefined;
-              next.dailyCarbsGoalG = undefined;
-              next.dailyFatGoalG = undefined;
-            }
+              if (!next.goalEnabled) {
+                next.dailyCalorieGoal = undefined;
+                next.dailyProteinGoalG = undefined;
+                next.dailyCarbsGoalG = undefined;
+                next.dailyFatGoalG = undefined;
+              }
 
-            return next;
+              return next;
+            })
           })
         }));
       },
@@ -754,10 +1020,10 @@ export const usePlannerStore = create<PlannerState>()(
             nextWeekPlans[weekStart] = cloned;
           });
 
-          return {
+          return commitWithHistory(state, {
             profiles: nextProfiles,
             weekPlans: nextWeekPlans
-          };
+          });
         });
       },
 
@@ -767,12 +1033,13 @@ export const usePlannerStore = create<PlannerState>()(
           const existing = state.ingredients.find((ingredient) => normalizeName(ingredient.name) === normalized);
 
           if (existing) {
-            return {
+            return commitWithHistory(state, {
               ingredients: state.ingredients.map((ingredient) =>
                 ingredient.id === existing.id
                   ? {
                       ...ingredient,
                       count: Math.max(0, ingredient.count + input.count),
+                      servingsPerCount: normalizeServingsPerCount(input.servingsPerCount ?? ingredient.servingsPerCount),
                       category: input.category ?? ingredient.category,
                       expirationDate: input.expirationDate ?? ingredient.expirationDate,
                       notes: input.notes ?? ingredient.notes,
@@ -784,7 +1051,7 @@ export const usePlannerStore = create<PlannerState>()(
                     }
                   : ingredient
               )
-            };
+            });
           }
 
           const ingredient: Ingredient = {
@@ -793,6 +1060,7 @@ export const usePlannerStore = create<PlannerState>()(
             name: input.name,
             category: CATEGORIES.includes(input.category) ? input.category : 'Other',
             count: Math.max(0, input.count),
+            servingsPerCount: normalizeServingsPerCount(input.servingsPerCount),
             expirationDate: input.expirationDate,
             notes: input.notes,
             pinned: input.pinned,
@@ -802,57 +1070,69 @@ export const usePlannerStore = create<PlannerState>()(
             fat_g: input.fat_g
           };
 
-          return { ingredients: [ingredient, ...state.ingredients] };
+          return commitWithHistory(state, { ingredients: [ingredient, ...state.ingredients] });
         });
       },
 
       updateIngredient: (id, updates) => {
-        set((state) => ({
-          ingredients: state.ingredients.map((ingredient) =>
-            ingredient.id === id
-              ? {
-                  ...ingredient,
-                  ...updates,
-                  count: updates.count === undefined ? ingredient.count : Math.max(0, updates.count)
-                }
-              : ingredient
-          )
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            ingredients: state.ingredients.map((ingredient) =>
+              ingredient.id === id
+                ? {
+                    ...ingredient,
+                    ...updates,
+                    count: updates.count === undefined ? ingredient.count : Math.max(0, updates.count),
+                    servingsPerCount:
+                      updates.servingsPerCount === undefined
+                        ? ingredient.servingsPerCount
+                        : normalizeServingsPerCount(updates.servingsPerCount)
+                  }
+                : ingredient
+            )
+          })
+        );
       },
 
       deleteIngredient: (id) => {
-        set((state) => ({
-          ingredients: state.ingredients.filter((ingredient) => ingredient.id !== id)
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            ingredients: state.ingredients.filter((ingredient) => ingredient.id !== id)
+          })
+        );
       },
 
       adjustIngredientCount: (id, delta) => {
-        set((state) => ({
-          ingredients: state.ingredients.map((ingredient) =>
-            ingredient.id === id ? { ...ingredient, count: Math.max(0, ingredient.count + delta) } : ingredient
-          )
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            ingredients: state.ingredients.map((ingredient) =>
+              ingredient.id === id ? { ...ingredient, count: Math.max(0, roundCount(ingredient.count + delta)) } : ingredient
+            )
+          })
+        );
       },
 
       toggleIngredientPinned: (id) => {
-        set((state) => ({
-          ingredients: state.ingredients.map((ingredient) =>
-            ingredient.id === id ? { ...ingredient, pinned: !ingredient.pinned } : ingredient
-          )
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            ingredients: state.ingredients.map((ingredient) =>
+              ingredient.id === id ? { ...ingredient, pinned: !ingredient.pinned } : ingredient
+            )
+          })
+        );
       },
 
-      clearInventory: () => set({ ingredients: [] }),
+      clearInventory: () => set((state) => commitWithHistory(state, { ingredients: [] })),
       clearCurrentWeekAndRestoreInventory: () => {
         set((state) => {
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const current = weekPlans[state.currentWeekStartDate];
           const restoredIngredients = restoreWeekIngredients(state.ingredients, current);
           weekPlans[state.currentWeekStartDate] = createEmptyWeekPlan(state.currentWeekStartDate);
-          return {
+          return commitWithHistory(state, {
             ingredients: restoredIngredients,
             weekPlans
-          };
+          });
         });
       },
 
@@ -863,35 +1143,42 @@ export const usePlannerStore = create<PlannerState>()(
           name: input.name,
           ingredients: input.ingredients,
           servingsDefault: input.servingsDefault,
+          caloriesPerServing: input.caloriesPerServing,
           pinned: input.pinned
         };
 
-        set((state) => ({
-          meals: [meal, ...state.meals],
-          pinnedMealIds: meal.pinned ? [...state.pinnedMealIds, meal.id] : state.pinnedMealIds
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            meals: [meal, ...state.meals],
+            pinnedMealIds: meal.pinned ? [...state.pinnedMealIds, meal.id] : state.pinnedMealIds
+          })
+        );
       },
 
       updateMeal: (id, updates) => {
-        set((state) => ({
-          meals: state.meals.map((meal) => (meal.id === id ? { ...meal, ...updates } : meal))
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            meals: state.meals.map((meal) => (meal.id === id ? { ...meal, ...updates } : meal))
+          })
+        );
       },
 
       deleteMeal: (id) => {
-        set((state) => ({
-          meals: state.meals.filter((meal) => meal.id !== id),
-          pinnedMealIds: state.pinnedMealIds.filter((mealId) => mealId !== id)
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            meals: state.meals.filter((meal) => meal.id !== id),
+            pinnedMealIds: state.pinnedMealIds.filter((mealId) => mealId !== id)
+          })
+        );
       },
 
       toggleMealPinned: (id) => {
         set((state) => {
           const isPinned = state.pinnedMealIds.includes(id);
-          return {
+          return commitWithHistory(state, {
             meals: state.meals.map((meal) => (meal.id === id ? { ...meal, pinned: !isPinned } : meal)),
             pinnedMealIds: isPinned ? state.pinnedMealIds.filter((mealId) => mealId !== id) : [...state.pinnedMealIds, id]
-          };
+          });
         });
       },
 
@@ -903,7 +1190,7 @@ export const usePlannerStore = create<PlannerState>()(
           if (target < 0 || target >= state.pinnedMealIds.length) return state;
           const next = [...state.pinnedMealIds];
           [next[index], next[target]] = [next[target], next[index]];
-          return { pinnedMealIds: next };
+          return commitWithHistory(state, { pinnedMealIds: next });
         });
       },
 
@@ -923,13 +1210,14 @@ export const usePlannerStore = create<PlannerState>()(
           setSlot(plan, address, current);
 
           weekPlans[state.currentWeekStartDate] = plan;
+          const deltaCount = servingsToCountDelta(1, ingredient.servingsPerCount);
 
-          return {
+          return commitWithHistory(state, {
             weekPlans,
             ingredients: state.ingredients.map((item) =>
-              item.id === ingredient.id ? { ...item, count: Math.max(0, item.count - 1) } : item
+              item.id === ingredient.id ? { ...item, count: roundCount(Math.max(0, item.count - deltaCount)) } : item
             )
-          };
+          });
         });
       },
 
@@ -940,15 +1228,21 @@ export const usePlannerStore = create<PlannerState>()(
 
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const current = getSlot(plan, address) ?? defaultSlotEntry();
+          const existing = getSlot(plan, address);
+          const current = existing ?? defaultSlotEntry();
           current.mealId = meal.id;
           current.adHocMealName = undefined;
           current.servings = current.servings || meal.servingsDefault || 2;
 
-          const ingredients = state.ingredients.map((ingredient) => ({ ...ingredient }));
+          const ingredients = existing
+            ? adjustInventoryForIngredientRefs(state.ingredients, existing.ingredientRefs, 'restore')
+            : state.ingredients.map((ingredient) => ({ ...ingredient }));
+
+          const servingScale = current.servings / Math.max(1, meal.servingsDefault || 1);
+          current.ingredientRefs = [];
 
           meal.ingredients.forEach((item) => {
-            const qty = Math.max(1, item.qty ?? 1);
+            const qty = Math.max(0.01, Math.round(Math.max(1, item.qty ?? 1) * servingScale * 100) / 100);
             const normalizedItemName = normalizeName(item.name);
             const matched = ingredients.find((ingredient) => normalizeName(ingredient.name) === normalizedItemName);
 
@@ -959,17 +1253,18 @@ export const usePlannerStore = create<PlannerState>()(
             });
 
             if (matched) {
-              matched.count = Math.max(0, matched.count - qty);
+              const deltaCount = servingsToCountDelta(qty, matched.servingsPerCount);
+              matched.count = roundCount(Math.max(0, matched.count - deltaCount));
             }
           });
 
           setSlot(plan, address, current);
           weekPlans[state.currentWeekStartDate] = plan;
 
-          return {
+          return commitWithHistory(state, {
             weekPlans,
             ingredients
-          };
+          });
         });
       },
 
@@ -989,7 +1284,7 @@ export const usePlannerStore = create<PlannerState>()(
           setSlot(plan, target, sourceEntry);
 
           weekPlans[state.currentWeekStartDate] = plan;
-          return { weekPlans };
+          return commitWithHistory(state, { weekPlans });
         });
       },
 
@@ -999,7 +1294,20 @@ export const usePlannerStore = create<PlannerState>()(
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
           setSlot(plan, address, null);
           weekPlans[state.currentWeekStartDate] = plan;
-          return { weekPlans };
+          return commitWithHistory(state, { weekPlans });
+        });
+      },
+
+      removeCellToInventory: (address) => {
+        set((state) => {
+          const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
+          const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
+          const slot = getSlot(plan, address);
+          if (!slot) return state;
+          setSlot(plan, address, null);
+          weekPlans[state.currentWeekStartDate] = plan;
+          const ingredients = adjustInventoryForIngredientRefs(state.ingredients, slot.ingredientRefs, 'restore');
+          return commitWithHistory(state, { weekPlans, ingredients });
         });
       },
 
@@ -1011,7 +1319,7 @@ export const usePlannerStore = create<PlannerState>()(
           if (!sourceEntry) return state;
           setSlot(plan, target, sourceEntry);
           weekPlans[state.currentWeekStartDate] = plan;
-          return { weekPlans };
+          return commitWithHistory(state, { weekPlans });
         });
       },
 
@@ -1029,7 +1337,7 @@ export const usePlannerStore = create<PlannerState>()(
 
           setSlot(plan, { mealType: 'lunch', day: address.day + 1, targetType: address.targetType, profileId: address.profileId }, leftovers);
           weekPlans[state.currentWeekStartDate] = plan;
-          return { weekPlans };
+          return commitWithHistory(state, { weekPlans });
         });
       },
 
@@ -1038,11 +1346,52 @@ export const usePlannerStore = create<PlannerState>()(
           const validServings = Math.max(1, Math.floor(servings));
           const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
           const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
-          const current = getSlot(plan, address) ?? defaultSlotEntry();
+          const original = getSlot(plan, address);
+          if (!original) return state;
+          const current = original;
+          const previousServings = Math.max(1, original?.servings || current.servings || 1);
+          const nextIngredientRefs = scaleIngredientRefs(current.ingredientRefs, validServings / previousServings);
           current.servings = validServings;
+          current.ingredientRefs = nextIngredientRefs;
           setSlot(plan, address, current);
           weekPlans[state.currentWeekStartDate] = plan;
-          return { weekPlans };
+
+          const originalRefs = original?.ingredientRefs ?? [];
+          const allRefs = [...originalRefs, ...nextIngredientRefs];
+          const uniqueKeys = Array.from(
+            new Set(
+              allRefs.map((ref) => (ref.ingredientId ? `id:${ref.ingredientId}` : `name:${normalizeName(ref.name)}`))
+            )
+          );
+
+          const deltaRefs = uniqueKeys
+            .map((key) => {
+              const old = originalRefs.find((ref) => (ref.ingredientId ? `id:${ref.ingredientId}` : `name:${normalizeName(ref.name)}`) === key);
+              const next = nextIngredientRefs.find(
+                (ref) => (ref.ingredientId ? `id:${ref.ingredientId}` : `name:${normalizeName(ref.name)}`) === key
+              );
+              return {
+                ingredientId: next?.ingredientId ?? old?.ingredientId,
+                name: next?.name ?? old?.name ?? '',
+                qty: Math.round(((next?.qty ?? 0) - (old?.qty ?? 0)) * 100) / 100
+              };
+            })
+            .filter((item) => item.name && item.qty !== 0);
+
+          const adjustedIngredients = state.ingredients.map((ingredient) => {
+            let nextCount = ingredient.count;
+            deltaRefs.forEach((deltaRef) => {
+              const matchById = deltaRef.ingredientId && deltaRef.ingredientId === ingredient.id;
+              const matchByName = !deltaRef.ingredientId && normalizeName(deltaRef.name) === normalizeName(ingredient.name);
+              if (!matchById && !matchByName) return;
+              const deltaCount = servingsToCountDelta(Math.abs(deltaRef.qty), ingredient.servingsPerCount);
+              if (deltaRef.qty > 0) nextCount -= deltaCount;
+              else nextCount += deltaCount;
+            });
+            return { ...ingredient, count: roundCount(Math.max(0, nextCount)) };
+          });
+
+          return commitWithHistory(state, { weekPlans, ingredients: adjustedIngredients });
         });
       },
 
@@ -1068,10 +1417,10 @@ export const usePlannerStore = create<PlannerState>()(
             createdAt: new Date().toISOString()
           };
 
-          return {
+          return commitWithHistory(state, {
             meals: [meal, ...state.meals],
             pinnedMealIds: [meal.id, ...state.pinnedMealIds]
-          };
+          });
         });
       },
 
@@ -1094,6 +1443,7 @@ export const usePlannerStore = create<PlannerState>()(
                   name: item.name,
                   category: item.category,
                   count: Math.max(1, item.count),
+                  servingsPerCount: 1,
                   createdAt: new Date().toISOString()
                 },
                 ...ingredients
@@ -1101,12 +1451,12 @@ export const usePlannerStore = create<PlannerState>()(
             }
           });
 
-          return { ingredients };
+          return commitWithHistory(state, { ingredients });
         });
       },
 
       resetDemoData: () => {
-        set(() => ({ ...createDemoState() }));
+        set((state) => commitWithHistory(state, createDemoState()));
       },
 
       importState: (payload) => {
@@ -1122,15 +1472,20 @@ export const usePlannerStore = create<PlannerState>()(
           normalizedPlans[key] = normalizeWeekPlan(plan, primaryProfileId);
         });
 
-        set(() => ({
-          ingredients: payload.ingredients,
-          meals: payload.meals,
-          profiles,
-          pinnedMealIds: payload.pinnedMealIds ?? [],
-          weekPlans: normalizedPlans,
-          currentWeekStartDate: payload.currentWeekStartDate,
-          inventorySort: 'category'
-        }));
+        set((state) =>
+          commitWithHistory(state, {
+            ingredients: payload.ingredients.map((item) => ({
+              ...item,
+              servingsPerCount: normalizeServingsPerCount(item.servingsPerCount)
+            })),
+            meals: payload.meals,
+            profiles,
+            pinnedMealIds: payload.pinnedMealIds ?? [],
+            weekPlans: normalizedPlans,
+            currentWeekStartDate: payload.currentWeekStartDate,
+            inventorySort: 'category'
+          })
+        );
       },
 
       getCurrentWeekPlan: () => {
