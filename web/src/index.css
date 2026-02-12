@@ -266,6 +266,22 @@ body {
   -webkit-backdrop-filter: blur(12px);
 }
 
+.drag-handle {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-drag: none;
+  touch-action: none;
+}
+
+.drag-active,
+.drag-active * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
 .hero-title {
   font-size: clamp(1.05rem, 1.8vw, 1.7rem);
   font-weight: 760;

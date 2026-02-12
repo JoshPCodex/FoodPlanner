@@ -37,7 +37,7 @@ export function InventoryBubble({ ingredient, onOpenEditor, onOpenContextMenu }:
       {...listeners}
       {...attributes}
       className={clsx(
-        'glass-panel relative flex w-full items-center justify-between gap-3 rounded-full border px-3 py-2 text-left text-sm font-semibold shadow-bubble transition hover:-translate-y-0.5 hover:shadow-xl',
+        'drag-handle glass-panel relative flex w-full items-center justify-between gap-3 rounded-full border px-3 py-2 text-left text-sm font-semibold shadow-bubble transition hover:-translate-y-0.5 hover:shadow-xl',
         CATEGORY_STYLES[ingredient.category],
         ingredient.count === 0 && 'border-slate-300 bg-slate-100 text-slate-500 opacity-55',
         isExpiringSoon(ingredient.expirationDate) && 'ring-2 ring-amber-300',

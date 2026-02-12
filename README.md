@@ -1,4 +1,4 @@
-# SupperSync
+# Refridgermate
 
 A simple weekly meal planner for home use. Drag ingredients and favorite meals into the calendar, assign them to Family or a person, and keep a live inventory.
 
@@ -21,9 +21,13 @@ docker compose up --build
 ## Run on iPhone (same Wi-Fi)
 
 1. Keep the app running on your Mac with `docker compose up --build`
-2. Find your Mac local IP (example: `ipconfig getifaddr en0`)
-3. On iPhone Safari, open `http://YOUR-MAC-IP:5173`
-4. Optional: Share -> Add to Home Screen
+2. Find your Mac local IP:
+   - Mac path: `System Settings -> Wi-Fi -> Details (connected network) -> TCP/IP -> IP address`
+   - Terminal shortcut: `ipconfig getifaddr en0`
+3. Optional: verify iPhone network info:
+   - iPhone path: `Settings -> Wi-Fi -> (i) on your connected network -> IP Address`
+4. On iPhone Safari, open `http://YOUR-MAC-IP:5173`
+5. Optional: Share -> Add to Home Screen
 
 ## What Is Running
 

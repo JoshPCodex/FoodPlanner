@@ -25,7 +25,7 @@ export function FavoriteMealCard({ meal, isPinned, onTogglePin, onMove, onEdit }
     <div
       ref={setNodeRef}
       className={clsx(
-        'glass-panel min-w-56 rounded-2xl p-3 transition hover:scale-[1.01] hover:shadow-2xl',
+        'drag-handle glass-panel min-w-56 rounded-2xl p-3 transition hover:scale-[1.01] hover:shadow-2xl',
         isDragging && 'opacity-40'
       )}
       style={{ transform: CSS.Transform.toString(transform) }}

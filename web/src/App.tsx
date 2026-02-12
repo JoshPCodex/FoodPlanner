@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { DAY_NAMES, MEAL_LABELS, MEAL_TYPES, CATEGORIES } from './constants';
 import { CalendarCell, SlotAddress } from './components/CalendarCell';
 import { ContextMenu } from './components/ContextMenu';
@@ -195,7 +195,15 @@ export default function App() {
   const [activeDragLabel, setActiveDragLabel] = useState<string>('');
   const [activeDragType, setActiveDragType] = useState<string | null>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 140,
+        tolerance: 10
+      }
+    })
+  );
 
   const mealById = useMemo(() => new Map(meals.map((meal) => [meal.id, meal])), [meals]);
 
@@ -400,7 +408,7 @@ export default function App() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-      link.download = `suppersync-data-${currentWeekStartDate}.json`;
+    link.download = `refridgermate-data-${currentWeekStartDate}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -570,13 +578,13 @@ export default function App() {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="app-shell min-h-screen px-4 py-4 text-slate-800">
+      <div className={`app-shell min-h-screen px-4 py-4 text-slate-800 ${activeDragType ? 'drag-active' : ''}`}>
         <div className="shell-content mx-auto flex w-full max-w-[1800px] flex-col gap-4">
           <header className="glass-panel-strong float-in stagger-1 rounded-2xl p-4">
             <div className="orbit-glow" />
             <div className="relative z-10 mb-3 flex flex-wrap items-end justify-between gap-2">
               <div>
-                <div className="hero-title">SupperSync</div>
+                <div className="hero-title">Refridgermate</div>
                 <div className="hero-subtitle">Plan your week, balance nutrition, and keep inventory in sync.</div>
               </div>
             </div>
@@ -1215,7 +1223,8 @@ export default function App() {
             <p>Use your iPhone on the same Wi-Fi network as your Mac.</p>
             <ol className="list-decimal space-y-2 pl-5">
               <li>Start the app on your Mac: <code>docker compose up --build</code></li>
-              <li>Find your Mac’s local IP address (for example with <code>ipconfig getifaddr en0</code> in Terminal).</li>
+              <li>On your Mac go to System Settings, then Wi-Fi, then Details on your connected network, then TCP/IP. Use the <strong>IP address</strong> value.</li>
+              <li>Terminal shortcut (optional): run <code>ipconfig getifaddr en0</code>.</li>
               <li>On iPhone Safari, open <code>http://YOUR-MAC-IP:5173</code></li>
               <li>Optional: tap Share, then Add to Home Screen for app-like launch.</li>
             </ol>
@@ -1228,7 +1237,7 @@ export default function App() {
 
       <DragOverlay>
         {activeDragLabel ? (
-          <div className="drag-overlay-badge rounded-full px-3 py-1 text-sm font-semibold">{activeDragLabel}</div>
+          <div className="drag-overlay-badge drag-handle rounded-full px-3 py-1 text-sm font-semibold">{activeDragLabel}</div>
         ) : null}
       </DragOverlay>
     </DndContext>
