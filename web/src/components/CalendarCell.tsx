@@ -77,7 +77,7 @@ function SlotCard({ address, label, tint, slot, resolveMealName, onSlotContextMe
         ref={moveDraggable.setNodeRef}
         type="button"
         className={clsx(
-          'relative z-10 inline-flex max-w-full items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-left text-[11px] font-semibold text-emerald-900',
+          'drag-handle relative z-10 inline-flex max-w-full items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-left text-[11px] font-semibold text-emerald-900',
           moveDraggable.isDragging && 'opacity-50'
         )}
         style={{ transform: CSS.Transform.toString(moveDraggable.transform) }}
