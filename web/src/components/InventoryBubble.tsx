@@ -13,6 +13,10 @@ interface InventoryBubbleProps {
 }
 
 export function InventoryBubble({ ingredient, onOpenEditor, onOpenContextMenu }: InventoryBubbleProps) {
+  const servingsPerCount = ingredient.servingsPerCount ?? 1;
+  const totalServings = ingredient.count * servingsPerCount;
+  const countLabel = Number.isInteger(ingredient.count) ? String(ingredient.count) : ingredient.count.toFixed(2);
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `ingredient-${ingredient.id}`,
     data: {
@@ -49,7 +53,8 @@ export function InventoryBubble({ ingredient, onOpenEditor, onOpenContextMenu }:
       <span className="relative z-10 truncate">{ingredient.name}</span>
       <span className="relative z-10 flex items-center gap-1">
         {ingredient.pinned && <span className="rounded-full bg-slate-900 px-1.5 text-[10px] text-white">PIN</span>}
-        <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs shadow-sm">x{ingredient.count}</span>
+        <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs shadow-sm">x{countLabel}</span>
+        <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs shadow-sm">{Math.round(totalServings * 10) / 10} srv</span>
       </span>
     </button>
   );

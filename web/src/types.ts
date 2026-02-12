@@ -25,6 +25,7 @@ export interface Ingredient extends NutritionInfo {
   name: string;
   category: IngredientCategory;
   count: number;
+  servingsPerCount?: number;
   expirationDate?: string;
   pinned?: boolean;
   notes?: string;
@@ -42,6 +43,7 @@ export interface Meal {
   name: string;
   ingredients: MealIngredient[];
   servingsDefault: number;
+  caloriesPerServing?: number;
   pinned?: boolean;
   createdAt: string;
 }

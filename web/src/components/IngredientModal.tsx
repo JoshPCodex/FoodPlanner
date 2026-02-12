@@ -11,6 +11,7 @@ interface IngredientModalProps {
     name: string;
     category: IngredientCategory;
     count: number;
+    servingsPerCount?: number;
     expirationDate?: string;
     notes?: string;
     pinned?: boolean;
@@ -32,6 +33,7 @@ export function IngredientModal({ open, ingredient, onClose, onSave }: Ingredien
   const [name, setName] = useState('');
   const [category, setCategory] = useState<IngredientCategory>('Other');
   const [count, setCount] = useState(1);
+  const [servingsPerCount, setServingsPerCount] = useState(1);
   const [expirationDate, setExpirationDate] = useState('');
   const [notes, setNotes] = useState('');
   const [pinned, setPinned] = useState(false);
@@ -48,6 +50,7 @@ export function IngredientModal({ open, ingredient, onClose, onSave }: Ingredien
       setName(ingredient.name);
       setCategory(ingredient.category);
       setCount(ingredient.count);
+      setServingsPerCount(ingredient.servingsPerCount ?? 1);
       setExpirationDate(ingredient.expirationDate ?? '');
       setNotes(ingredient.notes ?? '');
       setPinned(Boolean(ingredient.pinned));
@@ -59,6 +62,7 @@ export function IngredientModal({ open, ingredient, onClose, onSave }: Ingredien
       setName('');
       setCategory('Other');
       setCount(1);
+      setServingsPerCount(1);
       setExpirationDate('');
       setNotes('');
       setPinned(false);
@@ -80,6 +84,7 @@ export function IngredientModal({ open, ingredient, onClose, onSave }: Ingredien
             name: name.trim(),
             category,
             count: Math.max(0, count),
+            servingsPerCount: Math.max(0.01, servingsPerCount),
             expirationDate: expirationDate || undefined,
             notes: notes || undefined,
             pinned,
@@ -102,7 +107,7 @@ export function IngredientModal({ open, ingredient, onClose, onSave }: Ingredien
           />
         </label>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-sm font-semibold text-slate-700">Category</span>
             <select
@@ -128,10 +133,22 @@ export function IngredientModal({ open, ingredient, onClose, onSave }: Ingredien
               className="frost-input w-full px-3 py-2"
             />
           </label>
+
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">Servings per count</span>
+            <input
+              type="number"
+              min={0.01}
+              step="0.01"
+              value={servingsPerCount}
+              onChange={(event) => setServingsPerCount(Number(event.target.value))}
+              className="frost-input w-full px-3 py-2"
+            />
+          </label>
         </div>
 
         <div className="glass-panel rounded-xl p-3">
-          <div className="mb-2 text-sm font-semibold text-slate-700">Nutrition Per 1 Inventory Unit (optional)</div>
+          <div className="mb-2 text-sm font-semibold text-slate-700">Nutrition Per 1 Serving (optional)</div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Calories</span>
