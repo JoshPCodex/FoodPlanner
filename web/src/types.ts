@@ -1,4 +1,4 @@
-export type IngredientCategory = 'Protein' | 'Dairy' | 'Produce' | 'Pantry' | 'Other';
+export type IngredientCategory = string;
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
 export interface NutritionInfo {
@@ -84,6 +84,7 @@ export interface PlannerExportShape {
   ingredients: Ingredient[];
   meals: Meal[];
   profiles: Profile[];
+  customCategories?: IngredientCategory[];
   pinnedMealIds: string[];
   weekPlans: Record<string, WeekPlan>;
   currentWeekStartDate: string;

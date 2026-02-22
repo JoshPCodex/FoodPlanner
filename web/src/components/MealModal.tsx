@@ -7,6 +7,7 @@ interface MealModalProps {
   open: boolean;
   meal?: Meal | null;
   existingMeals?: Meal[];
+  ingredientSuggestions?: string[];
   onClose: () => void;
   onSave: (input: {
     name: string;
@@ -24,7 +25,17 @@ function emptyIngredient(): MealIngredient {
   return { name: '', qty: 1, category: 'Other' };
 }
 
-export function MealModal({ open, meal, existingMeals = [], onClose, onSave, onDelete, onEditExisting, onDeleteExisting }: MealModalProps) {
+export function MealModal({
+  open,
+  meal,
+  existingMeals = [],
+  ingredientSuggestions = [],
+  onClose,
+  onSave,
+  onDelete,
+  onEditExisting,
+  onDeleteExisting
+}: MealModalProps) {
   const [name, setName] = useState('');
   const [servingsDefault, setServingsDefault] = useState(2);
   const [caloriesPerServing, setCaloriesPerServing] = useState('');
@@ -130,11 +141,17 @@ export function MealModal({ open, meal, existingMeals = [], onClose, onSave, onD
           </div>
 
           <div className="space-y-2">
+            <datalist id="ingredient-suggestions">
+              {ingredientSuggestions.map((name) => (
+                <option key={`ingredient-suggestion-${name}`} value={name} />
+              ))}
+            </datalist>
             {ingredients.map((item, index) => (
               <div key={`meal-ingredient-${index}`} className="grid grid-cols-12 gap-2">
                 <input
                   className="frost-input col-span-6 px-2 py-1.5 text-sm"
                   placeholder="Ingredient"
+                  list="ingredient-suggestions"
                   value={item.name}
                   onChange={(event) =>
                     setIngredients((current) =>

@@ -1,6 +1,7 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import clsx from 'clsx';
+import { useState } from 'react';
 import type { CellEntry, MealType, Profile, SlotEntry } from '../types';
 import { useLongPress } from '../utils/useLongPress';
 
@@ -21,6 +22,7 @@ interface CalendarCellProps {
   resolveMealName: (entry: SlotEntry) => string | undefined;
   onSlotContextMenu: (address: SlotAddress, x: number, y: number) => void;
   onRemoveSlot: (address: SlotAddress) => void;
+  onRestockIngredient: (address: SlotAddress, index: number) => void;
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -43,9 +45,74 @@ interface SlotCardProps {
   resolveMealName: (entry: SlotEntry) => string | undefined;
   onSlotContextMenu: (address: SlotAddress, x: number, y: number) => void;
   onRemoveSlot: (address: SlotAddress) => void;
+  onRestockIngredient: (address: SlotAddress, index: number) => void;
 }
 
-function SlotCard({ idPrefix, address, label, tint, slot, resolveMealName, onSlotContextMenu, onRemoveSlot }: SlotCardProps) {
+interface SlotIngredientChipProps {
+  idPrefix: string;
+  address: SlotAddress;
+  ingredientName: string;
+  qty: number;
+  index: number;
+  onRestockIngredient: (address: SlotAddress, index: number) => void;
+  onSlotContextMenu: (address: SlotAddress, x: number, y: number) => void;
+}
+
+function SlotIngredientChip({
+  idPrefix,
+  address,
+  ingredientName,
+  qty,
+  index,
+  onRestockIngredient,
+  onSlotContextMenu
+}: SlotIngredientChipProps) {
+  const ingredientDraggable = useDraggable({
+    id: `${idPrefix}-slot-ingredient-${address.mealType}-${address.day}-${address.targetType}-${address.profileId ?? 'family'}-${index}`,
+    data: {
+      dragType: 'slot-ingredient',
+      source: address,
+      ingredientIndex: index,
+      label: ingredientName
+    }
+  });
+
+  return (
+    <span
+      ref={ingredientDraggable.setNodeRef}
+      className={clsx(
+        'inline-flex items-center gap-1 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-700',
+        ingredientDraggable.isDragging && 'opacity-40'
+      )}
+      style={{ transform: CSS.Transform.toString(ingredientDraggable.transform) }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onSlotContextMenu(address, event.clientX, event.clientY);
+      }}
+      {...ingredientDraggable.listeners}
+      {...ingredientDraggable.attributes}
+    >
+      <span className="max-w-[120px] truncate">
+        {ingredientName}
+        {qty > 1 ? ` x${qty}` : ''}
+      </span>
+      <button
+        type="button"
+        className="rounded-full bg-slate-100 px-1 text-[9px] text-slate-600 hover:bg-slate-200"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRestockIngredient(address, index);
+        }}
+        title="Restock this ingredient"
+      >
+        ↺
+      </button>
+    </span>
+  );
+}
+
+function SlotCard({ idPrefix, address, label, tint, slot, resolveMealName, onSlotContextMenu, onRemoveSlot, onRestockIngredient }: SlotCardProps) {
+  const [showAllIngredients, setShowAllIngredients] = useState(false);
   const moveDraggable = useDraggable({
     id: `${idPrefix}-slot-content-${address.mealType}-${address.day}-${address.targetType}${address.profileId ? `-${address.profileId}` : ''}`,
     data: {
@@ -56,13 +123,19 @@ function SlotCard({ idPrefix, address, label, tint, slot, resolveMealName, onSlo
   });
 
   const longPress = useLongPress((x, y) => onSlotContextMenu(address, x, y));
+  const hiddenIngredients = Math.max(0, slot.ingredientRefs.length - 2);
+  const visibleIngredients = showAllIngredients ? slot.ingredientRefs : slot.ingredientRefs.slice(0, 2);
 
   return (
     <div
-      className="glass-panel rounded-xl border p-1.5"
+      className="glass-panel relative rounded-lg border p-1"
       style={{
         backgroundColor: tint ? hexToRgba(tint, 0.1) : '#f8fafc',
         borderColor: tint ? hexToRgba(tint, 0.45) : '#cbd5e1'
+      }}
+      onContextMenuCapture={(event) => {
+        event.preventDefault();
+        onSlotContextMenu(address, event.clientX, event.clientY);
       }}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -70,44 +143,68 @@ function SlotCard({ idPrefix, address, label, tint, slot, resolveMealName, onSlo
       }}
       {...longPress}
     >
-      <div className="relative z-10 mb-1 flex items-center justify-between gap-1">
-        <span className="truncate text-[11px] font-semibold" style={{ color: tint ?? '#0f172a' }}>
+      <button
+        type="button"
+        className="absolute right-1 top-1 z-20 rounded-md border border-slate-300 bg-white/85 p-1 text-slate-600 hover:bg-white hover:text-slate-900"
+        onClick={() => onRemoveSlot(address)}
+        title="Restock inventory"
+        aria-label="Restock inventory"
+      >
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 8h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z" />
+          <path d="M7 8V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2" />
+          <path d="M9 13h6" />
+        </svg>
+      </button>
+
+      <div className="relative z-10 mb-0.5 flex items-center justify-between gap-1">
+        <span className="truncate text-[10px] font-semibold uppercase tracking-wide" style={{ color: tint ?? '#0f172a' }}>
           {label}
         </span>
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-slate-500">Servings {slot.servings}</span>
-          <button
-            type="button"
-            className="btn-glass btn-sm text-[10px]"
-            onClick={() => onRemoveSlot(address)}
-            title="Remove from calendar and restock inventory"
-          >
-            Restock
-          </button>
-        </div>
+        <span className="pr-6 text-[9px] text-slate-500">{slot.servings} servings</span>
       </div>
 
       <button
         ref={moveDraggable.setNodeRef}
         type="button"
         className={clsx(
-          'drag-handle relative z-10 inline-flex max-w-full items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-left text-[11px] font-semibold text-emerald-900',
+          'drag-handle relative z-10 inline-flex max-w-full items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-left text-[10px] font-semibold text-emerald-900',
           moveDraggable.isDragging && 'opacity-50'
         )}
         style={{ transform: CSS.Transform.toString(moveDraggable.transform) }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onSlotContextMenu(address, event.clientX, event.clientY);
+        }}
         {...moveDraggable.listeners}
         {...moveDraggable.attributes}
       >
         <span className="truncate">{resolveMealName(slot) ?? 'Meal'}</span>
       </button>
 
-      <div className="relative z-10 mt-1 flex flex-wrap gap-1">
-        {slot.ingredientRefs.map((ingredient, index) => (
-          <span key={`${ingredient.name}-${index}`} className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-700">
-            {ingredient.name}
-            {ingredient.qty > 1 ? ` x${ingredient.qty}` : ''}
-          </span>
+      <div className="relative z-10 mt-0.5 flex flex-wrap gap-1">
+        {visibleIngredients.map((ingredient, index) => (
+          <SlotIngredientChip
+            key={`${ingredient.name}-${index}`}
+            idPrefix={idPrefix}
+            address={address}
+            ingredientName={ingredient.name}
+            qty={ingredient.qty}
+            index={index}
+            onRestockIngredient={onRestockIngredient}
+            onSlotContextMenu={onSlotContextMenu}
+          />
         ))}
+        {hiddenIngredients > 0 ? (
+          <button
+            type="button"
+            className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-white"
+            onClick={() => setShowAllIngredients((value) => !value)}
+            title={slot.ingredientRefs.slice(2).map((item) => item.name).join(', ')}
+          >
+            {showAllIngredients ? 'Show less' : `+${hiddenIngredients} more`}
+          </button>
+        ) : null}
       </div>
 
       {slot.isLeftovers && <div className="relative z-10 mt-1 text-[10px] font-semibold text-amber-700">Leftovers</div>}
@@ -166,7 +263,8 @@ export function CalendarCell({
   activeDragType,
   resolveMealName,
   onSlotContextMenu,
-  onRemoveSlot
+  onRemoveSlot,
+  onRestockIngredient
 }: CalendarCellProps) {
   const familySlot = entry?.family ?? null;
   const profileSlots = profiles.map((profile) => ({ profile, slot: entry?.profiles?.[profile.id] ?? null }));
@@ -199,6 +297,7 @@ export function CalendarCell({
             resolveMealName={resolveMealName}
             onSlotContextMenu={onSlotContextMenu}
             onRemoveSlot={onRemoveSlot}
+            onRestockIngredient={onRestockIngredient}
           />
         ) : (
           <div className="rounded-lg border border-dashed border-slate-200 bg-white/70 px-2 py-2 text-[11px] text-slate-500">Family</div>
@@ -215,6 +314,7 @@ export function CalendarCell({
             resolveMealName={resolveMealName}
             onSlotContextMenu={onSlotContextMenu}
             onRemoveSlot={onRemoveSlot}
+            onRestockIngredient={onRestockIngredient}
           />
         ))}
       </div>

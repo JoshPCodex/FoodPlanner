@@ -32,6 +32,7 @@ interface PlannerState {
   ingredients: Ingredient[];
   meals: Meal[];
   profiles: Profile[];
+  customCategories: IngredientCategory[];
   pinnedMealIds: string[];
   weekPlans: Record<string, WeekPlan>;
   currentWeekStartDate: string;
@@ -58,6 +59,7 @@ interface PlannerState {
   deleteProfile: (id: string) => void;
 
   addOrMergeIngredient: (input: Omit<Ingredient, 'id' | 'createdAt'> & { id?: string }) => void;
+  addCustomCategory: (category: string) => void;
   updateIngredient: (id: string, updates: Partial<Omit<Ingredient, 'id' | 'createdAt'>>) => void;
   deleteIngredient: (id: string) => void;
   adjustIngredientCount: (id: string, delta: number) => void;
@@ -76,6 +78,7 @@ interface PlannerState {
   moveOrSwapCell: (source: SlotAddress, target: SlotAddress) => void;
   clearCell: (address: SlotAddress) => void;
   removeCellToInventory: (address: SlotAddress) => void;
+  removeIngredientRefFromCell: (address: SlotAddress, index: number) => void;
   duplicateCell: (source: SlotAddress, target: SlotAddress) => void;
   makeLeftovers: (address: SlotAddress) => void;
   setCellServings: (address: SlotAddress, servings: number) => void;
@@ -93,6 +96,7 @@ interface PlannerSnapshot {
   ingredients: Ingredient[];
   meals: Meal[];
   profiles: Profile[];
+  customCategories: IngredientCategory[];
   pinnedMealIds: string[];
   weekPlans: Record<string, WeekPlan>;
   currentWeekStartDate: string;
@@ -853,6 +857,7 @@ function createDemoState() {
     ingredients,
     meals,
     profiles,
+    customCategories: [],
     pinnedMealIds,
     weekPlans: {
       [weekStart]: plannedWeek
@@ -868,7 +873,12 @@ const demoState = createDemoState();
 
 const HISTORY_LIMIT = 100;
 
-function snapshotFromState(state: Pick<PlannerState, 'ingredients' | 'meals' | 'profiles' | 'pinnedMealIds' | 'weekPlans' | 'currentWeekStartDate' | 'inventorySort'>): PlannerSnapshot {
+function snapshotFromState(
+  state: Pick<
+    PlannerState,
+    'ingredients' | 'meals' | 'profiles' | 'customCategories' | 'pinnedMealIds' | 'weekPlans' | 'currentWeekStartDate' | 'inventorySort'
+  >
+): PlannerSnapshot {
   return {
     ingredients: state.ingredients.map((item) => ({ ...item })),
     meals: state.meals.map((meal) => ({
@@ -876,6 +886,7 @@ function snapshotFromState(state: Pick<PlannerState, 'ingredients' | 'meals' | '
       ingredients: meal.ingredients.map((ingredient) => ({ ...ingredient }))
     })),
     profiles: state.profiles.map((profile) => ({ ...profile })),
+    customCategories: [...state.customCategories],
     pinnedMealIds: [...state.pinnedMealIds],
     weekPlans: Object.fromEntries(Object.entries(state.weekPlans).map(([key, plan]) => [key, clonePlan(plan)])),
     currentWeekStartDate: state.currentWeekStartDate,
@@ -1074,6 +1085,20 @@ export const usePlannerStore = create<PlannerState>()(
         });
       },
 
+      addCustomCategory: (category) => {
+        const trimmed = category.trim();
+        if (!trimmed) return;
+        set((state) => {
+          const exists = [...CATEGORIES, ...state.customCategories].some(
+            (item) => item.toLowerCase() === trimmed.toLowerCase()
+          );
+          if (exists) return state;
+          return commitWithHistory(state, {
+            customCategories: [...state.customCategories, trimmed]
+          });
+        });
+      },
+
       updateIngredient: (id, updates) => {
         set((state) =>
           commitWithHistory(state, {
@@ -1201,7 +1226,11 @@ export const usePlannerStore = create<PlannerState>()(
           const ingredient = state.ingredients.find((item) => item.id === ingredientId);
           if (!ingredient) return state;
 
-          const current = getSlot(plan, address) ?? defaultSlotEntry();
+          const existing = getSlot(plan, address);
+          const current = existing ?? defaultSlotEntry();
+          if (!existing) {
+            current.servings = Math.max(1, Math.round(ingredient.servingsPerCount ?? 1));
+          }
           current.ingredientRefs = addIngredientRef(current.ingredientRefs, {
             ingredientId: ingredient.id,
             name: ingredient.name,
@@ -1307,6 +1336,31 @@ export const usePlannerStore = create<PlannerState>()(
           setSlot(plan, address, null);
           weekPlans[state.currentWeekStartDate] = plan;
           const ingredients = adjustInventoryForIngredientRefs(state.ingredients, slot.ingredientRefs, 'restore');
+          return commitWithHistory(state, { weekPlans, ingredients });
+        });
+      },
+
+      removeIngredientRefFromCell: (address, index) => {
+        set((state) => {
+          const weekPlans = ensurePlan({ ...state.weekPlans }, state.currentWeekStartDate);
+          const plan = clonePlan(weekPlans[state.currentWeekStartDate]);
+          const slot = getSlot(plan, address);
+          if (!slot) return state;
+          if (index < 0 || index >= slot.ingredientRefs.length) return state;
+
+          const [removedRef] = slot.ingredientRefs.splice(index, 1);
+          if (!removedRef) return state;
+          slot.mealId = undefined;
+          slot.adHocMealName = undefined;
+
+          if (slot.ingredientRefs.length === 0) {
+            setSlot(plan, address, null);
+          } else {
+            setSlot(plan, address, slot);
+          }
+
+          weekPlans[state.currentWeekStartDate] = plan;
+          const ingredients = adjustInventoryForIngredientRefs(state.ingredients, [removedRef], 'restore');
           return commitWithHistory(state, { weekPlans, ingredients });
         });
       },
@@ -1480,6 +1534,14 @@ export const usePlannerStore = create<PlannerState>()(
             })),
             meals: payload.meals,
             profiles,
+            customCategories: [
+              ...new Set([
+                ...(payload.customCategories ?? []),
+                ...payload.ingredients
+                  .map((item) => item.category)
+                  .filter((category) => !CATEGORIES.some((base) => base.toLowerCase() === category.toLowerCase()))
+              ])
+            ],
             pinnedMealIds: payload.pinnedMealIds ?? [],
             weekPlans: normalizedPlans,
             currentWeekStartDate: payload.currentWeekStartDate,
@@ -1500,6 +1562,7 @@ export const usePlannerStore = create<PlannerState>()(
         ingredients: state.ingredients,
         meals: state.meals,
         profiles: state.profiles,
+        customCategories: state.customCategories,
         pinnedMealIds: state.pinnedMealIds,
         weekPlans: state.weekPlans,
         currentWeekStartDate: state.currentWeekStartDate,

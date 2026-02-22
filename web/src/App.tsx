@@ -137,6 +137,7 @@ export default function App() {
     ingredients,
     meals,
     profiles,
+    customCategories,
     pinnedMealIds,
     weekPlans,
     currentWeekStartDate,
@@ -151,6 +152,7 @@ export default function App() {
     updateProfile,
     deleteProfile,
     addOrMergeIngredient,
+    addCustomCategory,
     updateIngredient,
     deleteIngredient,
     adjustIngredientCount,
@@ -167,6 +169,7 @@ export default function App() {
     moveOrSwapCell,
     clearCell,
     removeCellToInventory,
+    removeIngredientRefFromCell,
     duplicateCell,
     makeLeftovers,
     setCellServings,
@@ -267,6 +270,10 @@ export default function App() {
   const allMeals = useMemo(() => [...meals].sort((a, b) => a.name.localeCompare(b.name)), [meals]);
 
   const groupedIngredients = useMemo(() => {
+    const availableCategories = [
+      ...CATEGORIES,
+      ...customCategories.filter((category) => !CATEGORIES.some((base) => base.toLowerCase() === category.toLowerCase()))
+    ];
     const sorted = [...ingredients].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
@@ -280,11 +287,27 @@ export default function App() {
       return a.name.localeCompare(b.name);
     });
 
-    return CATEGORIES.map((category) => ({
+    return availableCategories.map((category) => ({
       category,
       items: sorted.filter((ingredient) => ingredient.category === category)
     })).filter((bucket) => bucket.items.length > 0);
-  }, [ingredients, inventorySort]);
+  }, [customCategories, ingredients, inventorySort]);
+
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...CATEGORIES,
+          ...customCategories,
+          ...ingredients.map((ingredient) => ingredient.category)
+        ])
+      ),
+    [customCategories, ingredients]
+  );
+  const ingredientSuggestions = useMemo(
+    () => Array.from(new Set(ingredients.map((ingredient) => ingredient.name))).sort((a, b) => a.localeCompare(b)),
+    [ingredients]
+  );
 
   const weekStart = parseISODate(currentWeekStartDate);
   const dayIsoList = useMemo(
@@ -448,6 +471,7 @@ export default function App() {
       ingredients,
       meals,
       profiles,
+      customCategories,
       pinnedMealIds,
       weekPlans,
       currentWeekStartDate
@@ -497,12 +521,19 @@ export default function App() {
     );
 
     if (
-      dragType === 'slot-content' &&
+      (dragType === 'slot-content' || dragType === 'slot-ingredient') &&
       (overId.startsWith('inventory-drop') || (!event.over && inventoryWasOverDuringDragRef.current) || pointerInsideInventory)
     ) {
       const source = event.active.data.current?.source as SlotAddress | undefined;
       if (source) {
-        removeCellToInventory(source);
+        if (dragType === 'slot-ingredient') {
+          const ingredientIndex = Number(event.active.data.current?.ingredientIndex ?? -1);
+          if (ingredientIndex >= 0) {
+            removeIngredientRefFromCell(source, ingredientIndex);
+          }
+        } else {
+          removeCellToInventory(source);
+        }
       }
       inventoryWasOverDuringDragRef.current = false;
       pointerPositionRef.current = null;
@@ -646,12 +677,15 @@ export default function App() {
         id: 'change-category',
         label: 'Change category',
         onClick: () => {
-          const value = window.prompt(`Category: ${CATEGORIES.join(', ')}`, ingredient.category);
+          const value = window.prompt(`Category: ${categoryOptions.join(', ')}`, ingredient.category);
           if (!value) return;
           const normalized = value.toLowerCase();
-          const category = CATEGORIES.find((item) => item.toLowerCase() === normalized) as IngredientCategory | undefined;
-          if (!category) return;
-          updateIngredient(ingredient.id, { category });
+          const category = categoryOptions.find((item) => item.toLowerCase() === normalized) as IngredientCategory | undefined;
+          const finalCategory = category ?? value.trim();
+          if (!category) {
+            addCustomCategory(finalCategory);
+          }
+          updateIngredient(ingredient.id, { category: finalCategory });
         }
       },
       {
@@ -669,7 +703,7 @@ export default function App() {
         }
       }
     ];
-  }, [adjustIngredientCount, contextMenu, deleteIngredient, toggleIngredientPinned, updateIngredient]);
+  }, [addCustomCategory, adjustIngredientCount, categoryOptions, contextMenu, deleteIngredient, toggleIngredientPinned, updateIngredient]);
 
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -1034,6 +1068,7 @@ export default function App() {
                       resolveMealName={resolveMealName}
                       onSlotContextMenu={openSlotContextMenu}
                       onRemoveSlot={removeCellToInventory}
+                      onRestockIngredient={removeIngredientRefFromCell}
                     />
                   </div>
                 ))}
@@ -1107,6 +1142,7 @@ export default function App() {
                         resolveMealName={resolveMealName}
                         onSlotContextMenu={openSlotContextMenu}
                         onRemoveSlot={removeCellToInventory}
+                        onRestockIngredient={removeIngredientRefFromCell}
                       />
                     ))}
                   </div>
@@ -1137,6 +1173,8 @@ export default function App() {
         <IngredientModal
           open={ingredientModalOpen}
           ingredient={editingIngredient}
+          categoryOptions={categoryOptions}
+          onAddCategory={addCustomCategory}
           onClose={() => setIngredientModalOpen(false)}
           onSave={(values) => {
             if (editingIngredient) {
@@ -1151,6 +1189,7 @@ export default function App() {
           open={mealModalOpen}
           meal={editingMeal}
           existingMeals={allMeals}
+          ingredientSuggestions={ingredientSuggestions}
           onClose={() => setMealModalOpen(false)}
           onDelete={(mealId) => {
             const target = mealById.get(mealId);
