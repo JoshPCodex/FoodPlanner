@@ -256,11 +256,11 @@ interface HungryrootImportResult {
 }
 
 function isHungryrootHeader(line: string): 'recipes' | 'groceries' | null {
-  const cleaned = line.trim().toLowerCase();
+  const cleaned = line.trim();
   if (!cleaned) return null;
-  if (cleaned === 'recipes') return 'recipes';
-  if (cleaned === 'groceries') return 'groceries';
-  if (cleaned === 'qty') return null;
+  if (/^recipes\s*:?\s*$/i.test(cleaned)) return 'recipes';
+  if (/^groceries\s*:?\s*$/i.test(cleaned)) return 'groceries';
+  if (/^qty\s*:?\s*$/i.test(cleaned)) return null;
   return null;
 }
 
@@ -339,9 +339,9 @@ export function parseHungryrootImportText(text: string): HungryrootImportResult 
       const previous = prevIndex >= 0 ? rawRecipes[prevIndex] : '';
       const shouldAppendToPrevious = Boolean(
         previous &&
-          (/[+&]\s*$/.test(previous) ||
-            /\bwith\s*$/i.test(previous) ||
-            (previous.length < 34 && !/[+&]|\bwith\b/i.test(previous)))
+          (/[+&/,-]\s*$/.test(previous) ||
+            /\b(with|and)\s*$/i.test(previous) ||
+            /^[a-z&]/.test(normalized))
       );
 
       if (shouldAppendToPrevious) {
