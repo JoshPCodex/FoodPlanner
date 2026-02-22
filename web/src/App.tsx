@@ -128,6 +128,10 @@ function optionalNumber(value: string): number | undefined {
   return Math.max(0, parsed);
 }
 
+function normalizeMealKey(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 export default function App() {
   const {
     ingredients,
@@ -1170,7 +1174,30 @@ export default function App() {
         />
 
         <ReceiptScannerModal open={receiptModalOpen} onClose={() => setReceiptModalOpen(false)} onImportItems={mergeReceiptItems} />
-        <AiImportModal open={aiImportModalOpen} onClose={() => setAiImportModalOpen(false)} onImportItems={mergeReceiptItems} />
+        <AiImportModal
+          open={aiImportModalOpen}
+          onClose={() => setAiImportModalOpen(false)}
+          onImportData={({ items, meals: importedMeals }) => {
+            if (items.length > 0) {
+              mergeReceiptItems(items);
+            }
+
+            if (importedMeals.length > 0) {
+              const existingMealNames = new Set(meals.map((meal) => normalizeMealKey(meal.name)));
+              importedMeals.forEach((meal) => {
+                const key = normalizeMealKey(meal.name);
+                if (existingMealNames.has(key)) return;
+                addMeal({
+                  name: meal.name,
+                  servingsDefault: Math.max(1, meal.servingsDefault || 2),
+                  pinned: false,
+                  ingredients: meal.ingredients
+                });
+                existingMealNames.add(key);
+              });
+            }
+          }}
+        />
 
         <Modal open={profileModalOpen} onClose={() => setProfileModalOpen(false)} title="Profiles" widthClassName="max-w-4xl">
           <div className="space-y-3">
