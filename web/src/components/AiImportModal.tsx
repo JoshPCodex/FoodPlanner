@@ -1,22 +1,26 @@
 import { useMemo, useState } from 'react';
-import type { IngredientCategory, ReceiptDraftItem } from '../types';
-import { AI_INVENTORY_PROMPT, parseInventoryImportText } from '../utils/inventoryImport';
+import type { IngredientCategory, MealIngredient, ReceiptDraftItem } from '../types';
+import { AI_HUNGRYROOT_PROMPT, AI_INVENTORY_PROMPT, type AiMealDraft, parseHungryrootImportText, parseInventoryImportText } from '../utils/inventoryImport';
 import { CATEGORIES } from '../constants';
 import { Modal } from './Modal';
 
 interface AiImportModalProps {
   open: boolean;
   onClose: () => void;
-  onImportItems: (items: ReceiptDraftItem[]) => void;
+  onImportData: (payload: { items: ReceiptDraftItem[]; meals: AiMealDraft[] }) => void;
 }
 
-export function AiImportModal({ open, onClose, onImportItems }: AiImportModalProps) {
+export function AiImportModal({ open, onClose, onImportData }: AiImportModalProps) {
+  const [mode, setMode] = useState<'inventory' | 'hungryroot'>('inventory');
   const [inputText, setInputText] = useState('');
   const [items, setItems] = useState<ReceiptDraftItem[]>([]);
+  const [meals, setMeals] = useState<AiMealDraft[]>([]);
 
-  const hasItems = items.length > 0;
+  const hasItems = items.length > 0 || meals.length > 0;
 
   const parsedCount = useMemo(() => items.reduce((sum, item) => sum + item.count, 0), [items]);
+  const prompt = mode === 'hungryroot' ? AI_HUNGRYROOT_PROMPT : AI_INVENTORY_PROMPT;
+  const mealCount = meals.length;
 
   return (
     <Modal open={open} onClose={onClose} title="AI Inventory Helper" widthClassName="max-w-5xl">
@@ -29,7 +33,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
               className="btn-glass btn-sm"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(AI_INVENTORY_PROMPT);
+                  await navigator.clipboard.writeText(prompt);
                 } catch {
                   window.alert('Copy failed. You can manually copy the prompt text.');
                 }
@@ -39,8 +43,25 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
             </button>
           </div>
 
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`btn-glass btn-sm ${mode === 'inventory' ? 'btn-primary' : ''}`}
+              onClick={() => setMode('inventory')}
+            >
+              Generic Receipts
+            </button>
+            <button
+              type="button"
+              className={`btn-glass btn-sm ${mode === 'hungryroot' ? 'btn-primary' : ''}`}
+              onClick={() => setMode('hungryroot')}
+            >
+              Hungryroot
+            </button>
+          </div>
+
           <textarea
-            value={AI_INVENTORY_PROMPT}
+            value={prompt}
             readOnly
             className="frost-input h-80 w-full bg-white/70 px-3 py-2 font-mono text-xs"
           />
@@ -65,8 +86,15 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
               type="button"
               className="btn-glass btn-md"
               onClick={() => {
-                const parsed = parseInventoryImportText(inputText);
-                setItems(parsed);
+                if (mode === 'hungryroot') {
+                  const parsed = parseHungryrootImportText(inputText);
+                  setItems(parsed.items);
+                  setMeals(parsed.meals);
+                } else {
+                  const parsed = parseInventoryImportText(inputText);
+                  setItems(parsed);
+                  setMeals([]);
+                }
               }}
             >
               Parse List
@@ -77,6 +105,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
               onClick={() => {
                 setInputText('');
                 setItems([]);
+                setMeals([]);
               }}
             >
               Clear
@@ -84,7 +113,7 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
           </div>
 
           <div className="glass-panel rounded-lg p-2 text-xs text-slate-600">
-            Parsed items: {items.length} | Total quantity units: {parsedCount}
+            Parsed items: {items.length} | Total quantity units: {parsedCount} | Parsed meals: {mealCount}
           </div>
 
           <div className="max-h-56 space-y-2 overflow-auto pr-1">
@@ -143,6 +172,65 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
             ))}
           </div>
 
+          {meals.length > 0 ? (
+            <div className="glass-panel space-y-2 rounded-lg p-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Parsed meals to save</div>
+              <div className="max-h-44 space-y-2 overflow-auto pr-1">
+                {meals.map((meal) => (
+                  <div key={meal.id} className="grid grid-cols-12 gap-2">
+                    <input
+                      value={meal.name}
+                      onChange={(event) =>
+                        setMeals((current) => current.map((line) => (line.id === meal.id ? { ...line, name: event.target.value } : line)))
+                      }
+                      className="frost-input col-span-6 px-2 py-1.5 text-sm"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={meal.servingsDefault}
+                      onChange={(event) =>
+                        setMeals((current) =>
+                          current.map((line) =>
+                            line.id === meal.id ? { ...line, servingsDefault: Math.max(1, Number(event.target.value) || 1) } : line
+                          )
+                        )
+                      }
+                      className="frost-input col-span-2 px-2 py-1.5 text-sm"
+                    />
+                    <input
+                      value={meal.ingredients.map((ingredient: MealIngredient) => ingredient.name).join(', ')}
+                      onChange={(event) =>
+                        setMeals((current) =>
+                          current.map((line) =>
+                            line.id === meal.id
+                              ? {
+                                ...line,
+                                ingredients: event.target.value
+                                  .split(',')
+                                  .map((part) => part.trim().toLowerCase())
+                                  .filter((part) => part.length > 0)
+                                  .map((part) => ({ name: part, qty: 1, category: 'Other' as IngredientCategory }))
+                              }
+                              : line
+                          )
+                        )
+                      }
+                      className="frost-input col-span-3 px-2 py-1.5 text-xs"
+                    />
+                    <button
+                      type="button"
+                      className="btn-glass btn-sm btn-danger col-span-1"
+                      onClick={() => setMeals((current) => current.filter((line) => line.id !== meal.id))}
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="flex justify-end gap-2">
             <button type="button" onClick={onClose} className="btn-glass btn-md">
               Cancel
@@ -153,14 +241,22 @@ export function AiImportModal({ open, onClose, onImportItems }: AiImportModalPro
               className="btn-glass btn-md btn-primary disabled:opacity-40"
               onClick={() => {
                 const cleaned = items.map((item) => ({ ...item, name: item.name.trim() })).filter((item) => item.name.length > 0);
-                if (cleaned.length === 0) return;
-                onImportItems(cleaned);
+                const cleanedMeals = meals
+                  .map((meal) => ({
+                    ...meal,
+                    name: meal.name.trim(),
+                    ingredients: meal.ingredients.filter((ingredient) => ingredient.name.trim().length > 0)
+                  }))
+                  .filter((meal) => meal.name.length > 0);
+                if (cleaned.length === 0 && cleanedMeals.length === 0) return;
+                onImportData({ items: cleaned, meals: cleanedMeals });
                 setInputText('');
                 setItems([]);
+                setMeals([]);
                 onClose();
               }}
             >
-              Import to Inventory
+              Import
             </button>
           </div>
         </div>

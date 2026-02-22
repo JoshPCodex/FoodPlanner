@@ -1,4 +1,4 @@
-import type { IngredientCategory, ReceiptDraftItem } from '../types';
+import type { IngredientCategory, MealIngredient, ReceiptDraftItem } from '../types';
 
 const CATEGORY_HINTS: Array<{ match: RegExp; category: IngredientCategory }> = [
   { match: /(chicken|pork|beef|steak|bacon|turkey|fish|meatball|ham|sausage|shrimp)/i, category: 'Protein' },
@@ -53,6 +53,10 @@ type ParsedLine =
 
 function inferCategory(name: string): IngredientCategory {
   return CATEGORY_HINTS.find((rule) => rule.match.test(name))?.category ?? 'Other';
+}
+
+function randomId(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 function canonicalizeName(name: string): string {
@@ -223,7 +227,7 @@ export function parseInventoryImportText(text: string): ReceiptDraftItem[] {
         });
       } else {
         merged.set(key, {
-          id: `ai-import-${Math.random().toString(36).slice(2, 9)}`,
+          id: randomId('ai-import'),
           name: key,
           count: parsed.count,
           category: inferCategory(key)
@@ -237,6 +241,148 @@ export function parseInventoryImportText(text: string): ReceiptDraftItem[] {
     });
 
   return Array.from(merged.values());
+}
+
+export interface AiMealDraft {
+  id: string;
+  name: string;
+  servingsDefault: number;
+  ingredients: MealIngredient[];
+}
+
+interface HungryrootImportResult {
+  items: ReceiptDraftItem[];
+  meals: AiMealDraft[];
+}
+
+function isHungryrootHeader(line: string): 'recipes' | 'groceries' | null {
+  const cleaned = line.trim().toLowerCase();
+  if (!cleaned) return null;
+  if (cleaned === 'recipes') return 'recipes';
+  if (cleaned === 'groceries') return 'groceries';
+  if (cleaned === 'qty') return null;
+  return null;
+}
+
+function normalizeMealName(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function looksLikeGroceriesLine(line: string): boolean {
+  return /\bx?\d+\s*$/i.test(line.trim()) || /\bfree\s*$/i.test(line.trim());
+}
+
+function parseGroceriesLine(rawLine: string): { name: string; count: number } | null {
+  const line = rawLine.trim();
+  if (!line) return null;
+  const freeMatch = line.match(/^(.*)\s+free$/i);
+  if (freeMatch) {
+    return {
+      name: normalizeName(freeMatch[1]),
+      count: 1
+    };
+  }
+
+  const qtyMatch = line.match(/^(.*)\s+x?(\d+)\s*$/i);
+  if (!qtyMatch) return null;
+  const count = Math.max(1, Number(qtyMatch[2]));
+  const name = normalizeName(qtyMatch[1]);
+  if (!name) return null;
+  return { name, count };
+}
+
+function mealIngredientsFromRecipeName(recipeName: string): MealIngredient[] {
+  const tokens = recipeName
+    .split(/\s+\+\s+|\s+with\s+|&|,/gi)
+    .map((part) => normalizeName(part))
+    .filter((part) => part.length > 1)
+    .slice(0, 6);
+
+  const deduped = Array.from(new Set(tokens));
+  if (deduped.length === 0) return [{ name: normalizeName(recipeName), qty: 1, category: 'Other' }];
+
+  return deduped.map((name) => ({
+    name,
+    qty: 1,
+    category: inferCategory(name)
+  }));
+}
+
+export function parseHungryrootImportText(text: string): HungryrootImportResult {
+  const cleanedText = stripCodeFences(text);
+  const lines = cleanedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  let mode: 'recipes' | 'groceries' | null = null;
+  const rawRecipes: string[] = [];
+  const groceries = new Map<string, ReceiptDraftItem>();
+
+  lines.forEach((line) => {
+    const header = isHungryrootHeader(line);
+    if (header) {
+      mode = header;
+      return;
+    }
+
+    if (!mode) {
+      if (looksLikeGroceriesLine(line)) mode = 'groceries';
+      else mode = 'recipes';
+    }
+
+    if (mode === 'recipes') {
+      const normalized = normalizeMealName(line);
+      if (!normalized) return;
+
+      const prevIndex = rawRecipes.length - 1;
+      const previous = prevIndex >= 0 ? rawRecipes[prevIndex] : '';
+      const shouldAppendToPrevious = Boolean(
+        previous &&
+          (/[+&]\s*$/.test(previous) ||
+            /\bwith\s*$/i.test(previous) ||
+            (previous.length < 34 && !/[+&]|\bwith\b/i.test(previous)))
+      );
+
+      if (shouldAppendToPrevious) {
+        rawRecipes[prevIndex] = `${previous} ${normalized}`.replace(/\s+/g, ' ').trim();
+      } else {
+        rawRecipes.push(normalized);
+      }
+      return;
+    }
+
+    const parsedGrocery = parseGroceriesLine(line);
+    if (!parsedGrocery) return;
+
+    const key = parsedGrocery.name;
+    const existing = groceries.get(key);
+    if (existing) {
+      groceries.set(key, { ...existing, count: existing.count + parsedGrocery.count });
+    } else {
+      groceries.set(key, {
+        id: randomId('hungryroot-item'),
+        name: key,
+        count: parsedGrocery.count,
+        category: inferCategory(key)
+      });
+    }
+  });
+
+  const meals: AiMealDraft[] = rawRecipes
+    .map((rawName) => normalizeMealName(rawName))
+    .filter((name) => name.length > 0)
+    .map((name) => ({
+      id: randomId('hungryroot-meal'),
+      name,
+      servingsDefault: 2,
+      ingredients: mealIngredientsFromRecipeName(name)
+    }));
+
+  return {
+    items: Array.from(groceries.values()),
+    meals
+  };
 }
 
 export const AI_INVENTORY_PROMPT = `You are helping me build a simple home food inventory from photos (receipt, fridge, pantry, groceries) OR raw pasted receipt text (like Instacart order details).
@@ -266,3 +412,25 @@ Rules:
    - If an item shows a "ct" count (for example, "6 ct"), use that count.
    - If both appear (for example, "2 x (6 ct eggs)"), multiply them.
    - If weight is present without explicit count, use x1.`;
+
+export const AI_HUNGRYROOT_PROMPT = `You are helping me import a Hungryroot receipt/order summary into my planner.
+
+The input may include a Recipes section and a Groceries section.
+Return ONLY one fenced code block in this exact format:
+
+\`\`\`text
+RECIPES:
+Recipe Name 1
+Recipe Name 2
+
+GROCERIES:
+ingredient name xN
+ingredient name xN
+\`\`\`
+
+Rules:
+1) Keep recipe names readable and unchanged except light cleanup of obvious OCR noise.
+2) Grocery lines must use generic ingredient names (no brands/packaging/marketing terms).
+3) Merge duplicate grocery items and sum quantities.
+4) If quantity is unknown, use x1.
+5) No extra commentary outside the code block.`;
