@@ -6,6 +6,7 @@ import { Modal } from './Modal';
 interface MealModalProps {
   open: boolean;
   meal?: Meal | null;
+  existingMeals?: Meal[];
   onClose: () => void;
   onSave: (input: {
     name: string;
@@ -15,13 +16,15 @@ interface MealModalProps {
     ingredients: MealIngredient[];
   }) => void;
   onDelete?: (mealId: string) => void;
+  onEditExisting?: (meal: Meal) => void;
+  onDeleteExisting?: (mealId: string) => void;
 }
 
 function emptyIngredient(): MealIngredient {
   return { name: '', qty: 1, category: 'Other' };
 }
 
-export function MealModal({ open, meal, onClose, onSave, onDelete }: MealModalProps) {
+export function MealModal({ open, meal, existingMeals = [], onClose, onSave, onDelete, onEditExisting, onDeleteExisting }: MealModalProps) {
   const [name, setName] = useState('');
   const [servingsDefault, setServingsDefault] = useState(2);
   const [caloriesPerServing, setCaloriesPerServing] = useState('');
@@ -197,6 +200,30 @@ export function MealModal({ open, meal, onClose, onSave, onDelete }: MealModalPr
           </button>
         </div>
       </form>
+
+      {!meal && existingMeals.length > 0 ? (
+        <div className="mt-3 glass-panel rounded-xl p-3">
+          <div className="mb-2 text-sm font-semibold text-slate-700">Existing Meals</div>
+          <div className="max-h-52 space-y-2 overflow-auto pr-1">
+            {existingMeals.map((existing) => (
+              <div key={`existing-meal-${existing.id}`} className="glass-panel flex items-center justify-between gap-2 rounded-lg px-2 py-1.5">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-slate-800">{existing.name}</div>
+                  <div className="text-[11px] text-slate-500">{existing.servingsDefault} servings</div>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button type="button" className="btn-glass btn-sm" onClick={() => onEditExisting?.(existing)}>
+                    Edit
+                  </button>
+                  <button type="button" className="btn-glass btn-sm btn-danger" onClick={() => onDeleteExisting?.(existing.id)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </Modal>
   );
 }

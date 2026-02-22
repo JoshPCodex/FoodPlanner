@@ -1150,6 +1150,7 @@ export default function App() {
         <MealModal
           open={mealModalOpen}
           meal={editingMeal}
+          existingMeals={allMeals}
           onClose={() => setMealModalOpen(false)}
           onDelete={(mealId) => {
             const target = mealById.get(mealId);
@@ -1158,6 +1159,16 @@ export default function App() {
               deleteMeal(mealId);
               setMealModalOpen(false);
               setEditingMeal(null);
+            }
+          }}
+          onEditExisting={(meal) => {
+            setEditingMeal(meal);
+          }}
+          onDeleteExisting={(mealId) => {
+            const target = mealById.get(mealId);
+            if (!target) return;
+            if (window.confirm(`Delete meal ${target.name}?`)) {
+              deleteMeal(mealId);
             }
           }}
           onSave={(values) => {
