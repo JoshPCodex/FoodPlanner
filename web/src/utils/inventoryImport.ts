@@ -62,9 +62,15 @@ function randomId(prefix: string): string {
 function canonicalizeName(name: string): string {
   return name
     .replace(/\beggs\b/g, 'egg')
+    .replace(/\bfillets?\b/g, '')
+    .replace(/\blets?\b/g, 'lettuce')
     .replace(/\bbananas\b/g, 'banana')
     .replace(/\bcarrots\b/g, 'carrot')
+    .replace(/\bpotatoes\b/g, 'potato')
+    .replace(/\bmandarins\b/g, 'mandarin')
+    .replace(/\bmuffins\b/g, 'muffin')
     .replace(/\bbreasts\b/g, 'breast')
+    .replace(/\bcookies\b/g, 'cookie')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -78,14 +84,42 @@ function normalizeName(value: string): string {
       .replace(/\$\s*\d+[\d.,]*/g, ' ')
       .replace(/\b\d+\b/g, ' ')
       .replace(
-        /\b(organic|fresh|frozen|large|small|medium|thinly\s+sliced|sliced|pack|package|pk|brand|club|family\s*pack|value\s*pack)\b/g,
+        /\b(organic|fresh|frozen|large|small|medium|thinly\s+sliced|sliced|pack|package|pk|brand|club|family\s*pack|value\s*pack|atlantic|baby|seasoned|microwave-ready|ready|single\s*serve|electrolyte|refresh(er)?|local|roasted|salted|crunchy|mini|vanilla|protein|super\s*food)\b/g,
         ' '
       )
       .replace(/\b(sargento|wegmans|instacart|kraft|tyson|perdue|great\s*value|signature\s*select)\b/g, ' ')
+      .replace(/\b(x\s*spicewalla|hungryroot|egg\s*harbor|bolthouse\s*farms|coleman|cindy['’]s|cuties|wonderful|wada\s*farms|partake\s*foods|golden\s*farms|kitchen\s*&\s*love|vital\s*farms|demakes|smash\s*foods|crepini|church\s*brothers|local\s*bounti|leisure\s*hydration|abel['’]s)\b/g, ' ')
       .replace(/[^a-z\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
   );
+}
+
+function simplifyIngredientName(value: string): string {
+  const normalized = normalizeName(value)
+    .replace(/\batlantic\s+salmon\b/g, 'salmon')
+    .replace(/\bsteelhead\s+trout\b/g, 'trout')
+    .replace(/\bgrilled\s+chicken\s+breast\b/g, 'chicken breast')
+    .replace(/\bchicken\s+breast\s+breast\b/g, 'chicken breast')
+    .replace(/\bstir\s*fry\s+vegetable\s+mix\b/g, 'stir fry vegetables')
+    .replace(/\briced\s+cauliflower\b/g, 'cauliflower rice')
+    .replace(/\bhard\s+boiled\s+egg\b/g, 'egg')
+    .replace(/\bchocolate\s+chip\s+cookie\b/g, 'cookie')
+    .replace(/\bcoffee\s+cake\s+muffin\b/g, 'muffin')
+    .replace(/\bstrawberry\s+chia\s+fruit\s+spread\b/g, 'fruit spread')
+    .replace(/\bgarlic\s+herb\s+seasoning\b/g, 'seasoning')
+    .replace(/\bmango\s+electrolyte\s+drink\b/g, 'mango drink')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized;
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .split(' ')
+    .filter((part) => part.length > 0)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function looksLikeNoiseLine(line: string): boolean {
@@ -278,7 +312,7 @@ function parseGroceriesLine(rawLine: string): { name: string; count: number } | 
   const freeMatch = line.match(/^(.*)\s+free$/i);
   if (freeMatch) {
     return {
-      name: normalizeName(freeMatch[1]),
+      name: simplifyIngredientName(freeMatch[1]),
       count: 1
     };
   }
@@ -286,7 +320,7 @@ function parseGroceriesLine(rawLine: string): { name: string; count: number } | 
   const qtyMatch = line.match(/^(.*)\s+x?(\d+)\s*$/i);
   if (!qtyMatch) return null;
   const count = Math.max(1, Number(qtyMatch[2]));
-  const name = normalizeName(qtyMatch[1]);
+  const name = simplifyIngredientName(qtyMatch[1]);
   if (!name) return null;
   return { name, count };
 }
@@ -294,7 +328,7 @@ function parseGroceriesLine(rawLine: string): { name: string; count: number } | 
 function mealIngredientsFromRecipeName(recipeName: string): MealIngredient[] {
   const tokens = recipeName
     .split(/\s+\+\s+|\s+with\s+|&|,/gi)
-    .map((part) => normalizeName(part))
+    .map((part) => simplifyIngredientName(part))
     .filter((part) => part.length > 1)
     .slice(0, 6);
 
@@ -306,6 +340,17 @@ function mealIngredientsFromRecipeName(recipeName: string): MealIngredient[] {
     qty: 1,
     category: inferCategory(name)
   }));
+}
+
+function simplifyMealName(name: string): string {
+  return toTitleCase(
+    normalizeMealName(name)
+      .replace(/\s*&\s*/g, ' and ')
+      .split(/\s+\+\s+|\s+with\s+|\s+and\s+/i)
+      .map((part) => simplifyIngredientName(part))
+      .filter((part) => part.length > 0)
+      .join(' + ')
+  );
 }
 
 export function parseHungryrootImportText(text: string): HungryrootImportResult {
@@ -370,7 +415,7 @@ export function parseHungryrootImportText(text: string): HungryrootImportResult 
   });
 
   const meals: AiMealDraft[] = rawRecipes
-    .map((rawName) => normalizeMealName(rawName))
+    .map((rawName) => simplifyMealName(rawName))
     .filter((name) => name.length > 0)
     .map((name) => ({
       id: randomId('hungryroot-meal'),

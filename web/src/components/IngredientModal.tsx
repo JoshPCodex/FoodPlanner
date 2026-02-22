@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CATEGORIES } from '../constants';
 import type { Ingredient, IngredientCategory } from '../types';
 import { Modal } from './Modal';
 
 interface IngredientModalProps {
   open: boolean;
   ingredient?: Ingredient | null;
+  categoryOptions?: IngredientCategory[];
+  onAddCategory?: (name: string) => void;
   onClose: () => void;
   onSave: (values: {
     name: string;
@@ -29,7 +30,7 @@ function toOptionalNumber(value: string): number | undefined {
   return Math.max(0, parsed);
 }
 
-export function IngredientModal({ open, ingredient, onClose, onSave }: IngredientModalProps) {
+export function IngredientModal({ open, ingredient, categoryOptions = ['Protein', 'Dairy', 'Produce', 'Pantry', 'Other'], onAddCategory, onClose, onSave }: IngredientModalProps) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<IngredientCategory>('Other');
   const [count, setCount] = useState(1);
@@ -110,17 +111,32 @@ export function IngredientModal({ open, ingredient, onClose, onSave }: Ingredien
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-sm font-semibold text-slate-700">Category</span>
-            <select
-              value={category}
-              onChange={(event) => setCategory(event.target.value as IngredientCategory)}
-              className="frost-input w-full px-3 py-2"
-            >
-              {CATEGORIES.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select
+                value={category}
+                onChange={(event) => setCategory(event.target.value as IngredientCategory)}
+                className="frost-input w-full px-3 py-2"
+              >
+                {categoryOptions.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn-glass btn-sm"
+                onClick={() => {
+                  const value = window.prompt('New food group name');
+                  if (!value || !value.trim()) return;
+                  const next = value.trim();
+                  onAddCategory?.(next);
+                  setCategory(next);
+                }}
+              >
+                + Group
+              </button>
+            </div>
           </label>
 
           <label className="block">
