@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, MouseSensor, TouchSensor, pointerWithin, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import { DAY_NAMES, MEAL_LABELS, MEAL_TYPES, CATEGORIES } from './constants';
 import { CalendarCell, SlotAddress } from './components/CalendarCell';
@@ -132,6 +132,9 @@ function normalizeMealKey(value: string): string {
   return value.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+const VISUALIZE_PATH = '/visualize';
+const VisualizePage = lazy(() => import('./pages/VisualizePage'));
+
 export default function App() {
   const {
     ingredients,
@@ -207,6 +210,7 @@ export default function App() {
 
   const [activeDragLabel, setActiveDragLabel] = useState<string>('');
   const [activeDragType, setActiveDragType] = useState<string | null>(null);
+  const [pathname, setPathname] = useState(() => window.location.pathname);
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -231,6 +235,16 @@ export default function App() {
     [setInventoryDropRef]
   );
 
+  const navigateTo = useCallback((nextPath: string) => {
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+    startTransition(() => {
+      setPathname(nextPath);
+    });
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, []);
+
   useEffect(() => {
     if (activeDragType !== 'slot-content') {
       inventoryWasOverDuringDragRef.current = false;
@@ -240,6 +254,17 @@ export default function App() {
       inventoryWasOverDuringDragRef.current = true;
     }
   }, [activeDragType, isOverInventoryDrop]);
+
+  useEffect(() => {
+    const syncPath = () => {
+      setPathname(window.location.pathname);
+    };
+
+    window.addEventListener('popstate', syncPath);
+    return () => {
+      window.removeEventListener('popstate', syncPath);
+    };
+  }, []);
 
   useEffect(() => {
     if (activeDragType !== 'slot-content') {
@@ -705,6 +730,22 @@ export default function App() {
     ];
   }, [addCustomCategory, adjustIngredientCount, categoryOptions, contextMenu, deleteIngredient, toggleIngredientPinned, updateIngredient]);
 
+  if (pathname === VISUALIZE_PATH) {
+    return (
+      <Suspense
+        fallback={
+          <div className="app-shell min-h-screen px-4 py-4 text-slate-800">
+            <div className="shell-content mx-auto flex min-h-[60vh] w-full max-w-[1800px] items-center justify-center">
+              <div className="glass-panel-strong rounded-2xl px-6 py-4 text-sm font-semibold text-slate-700">Loading visualize mode...</div>
+            </div>
+          </div>
+        }
+      >
+        <VisualizePage onBack={() => navigateTo('/')} />
+      </Suspense>
+    );
+  }
+
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className={`app-shell min-h-screen px-4 py-4 text-slate-800 ${activeDragType ? 'drag-active' : ''}`}>
@@ -758,6 +799,13 @@ export default function App() {
                   onClick={() => setAiImportModalOpen(true)}
                 >
                   AI Import Helper
+                </button>
+                <button
+                  type="button"
+                  className="btn-glass btn-md"
+                  onClick={() => navigateTo(VISUALIZE_PATH)}
+                >
+                  Visualize
                 </button>
                 <button
                   type="button"
